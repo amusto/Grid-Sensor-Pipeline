@@ -1,2 +1,19 @@
 .idea
 node_modules
+
+# Build & test artifacts
+dist/
+coverage/
+*.tsbuildinfo
+
+# CDK
+cdk.out/
+.cdk.staging/
+
+# Editor & OS
+.vscode/
+.DS_Store
+
+# Env
+.env
+.env.local
