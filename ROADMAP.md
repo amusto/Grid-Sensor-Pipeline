@@ -56,26 +56,22 @@ GitHub renders this Mermaid block inline. For LinkedIn/decks, export with
 
 ```mermaid
 gantt
-    title Grid Sensor Pipeline — Phase Timeline
+    title Grid Sensor Pipeline Roadmap
     dateFormat YYYY-MM-DD
     axisFormat %m/%d
-
     section Foundation
-    P1 Lib & tests              :done, p1, 2026-05-08, 1d
-    P2 Processor Lambda         :done, p2, 2026-05-08, 1d
-
+    P1 Lib and tests              :done,   p1, 2026-05-08, 1d
+    P2 Processor Lambda           :done,   p2, 2026-05-08, 1d
     section Infrastructure
-    P3 Storage + processing CDK :active, p3, 2026-05-08, 1d
-    P4 IoT Core + simulator     :p4, after p3, 1d
-    P5 Alert workflow           :p5, after p4, 1d
-    P6 DLQ + observability      :p6, after p5, 1d
-
+    P3 Storage and processing     :active, p3, 2026-05-08, 2d
+    P4 IoT Core and simulator     :        p4, after p3, 1d
+    P5 Alert workflow             :        p5, after p4, 1d
+    P6 DLQ and observability      :        p6, after p5, 1d
     section Application
-    P7 Query API                :p7, after p6, 1d
-    P8 Datadog bridge           :p8, after p7, 1d
-
+    P7 Query API                  :        p7, after p6, 1d
+    P8 Datadog bridge             :        p8, after p7, 1d
     section Polish
-    P9 Polish & teardown        :p9, after p8, 1d
+    P9 Polish and teardown        :        p9, after p8, 1d
 ```
 
 ### Phase × Requirements matrix
