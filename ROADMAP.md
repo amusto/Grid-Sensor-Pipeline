@@ -21,9 +21,84 @@ elapsed time depends on focus and velocity.
 ## Current state
 
 **Today:** Day 1 (2026-05-08)
-**Active phase:** Phase 2 — Processor Lambda (next up)
-**Last shipped:** Phase 1 — Lib & test foundation
+**Active phase:** Phase 3 — Storage + processing CDK stacks (next up)
+**Last shipped:** Phase 2 — Processor Lambda
 **Local verification pending:** `npm install && npm test && npm run build && npm run lint` on the user's machine (sandbox npm registry blocked).
+
+---
+
+## Progress
+
+### Overall
+
+```
+[██████░░░░░░░░░░░░░░] 31%   (13 / 41 sub-phases)
+```
+
+### By phase
+
+| # | Phase | Bar | % | Sub-phases | Status |
+|---|---|---|---|---|---|
+| 1 | Lib & test foundation        | `██████████` | 100% | 9/9 | ✅ |
+| 2 | Processor Lambda             | `██████████` | 100% | 4/4 | ✅ |
+| 3 | Storage + processing stacks  | `░░░░░░░░░░` |   0% | 0/6 | ⏭️ |
+| 4 | IoT Core + simulator         | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
+| 5 | Alert workflow               | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
+| 6 | DLQ + observability          | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
+| 7 | Query API                    | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
+| 8 | Datadog bridge               | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
+| 9 | Polish & teardown            | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
+
+### Gantt — phases on a timeline
+
+GitHub renders this Mermaid block inline. For LinkedIn/decks, export with
+`mmdc -i ROADMAP.md -o roadmap.png` or screenshot the rendered version.
+
+```mermaid
+gantt
+    title Grid Sensor Pipeline — Phase Timeline
+    dateFormat YYYY-MM-DD
+    axisFormat %m/%d
+
+    section Foundation
+    P1 Lib & tests              :done, p1, 2026-05-08, 1d
+    P2 Processor Lambda         :done, p2, 2026-05-08, 1d
+
+    section Infrastructure
+    P3 Storage + processing CDK :active, p3, 2026-05-09, 2d
+    P4 IoT Core + simulator     :p4, after p3, 1d
+    P5 Alert workflow           :p5, after p4, 1d
+    P6 DLQ + observability      :p6, after p5, 1d
+
+    section Application
+    P7 Query API                :p7, after p6, 1d
+    P8 Datadog bridge           :p8, after p7, 1d
+
+    section Polish
+    P9 Polish & teardown        :p9, after p8, 1d
+```
+
+### Phase × Requirements matrix
+
+Maps each phase to the CLAUDE.md architectural invariants and hard rules it
+satisfies. This is the requirements-alignment view: progress isn't just
+"code shipped" — it's "contract clauses honored."
+
+| Phase | Status | CLAUDE.md invariants satisfied | CLAUDE.md hard rules satisfied | Notes |
+|---|---|---|---|---|
+| P1 | ✅ | #2 (no I/O in `lib/`), #3 (`threshold.ts` is pure) | #1 (no `any`), #2 (no `console.log`), #3 (no bare `catch`), #4 (no hardcoded names) | Foundation that subsequent invariants are enforced against |
+| P2 | ✅ | #1 (validate at I/O boundary), #4 (no business logic in handler), #5 (idempotency = Kinesis seq#), #7 (always `batchItemFailures`), #8 (metrics in `finally`) | #1, #2, #3, #4 (continued) | Six contract clauses honored in 195 lines |
+| P3 | ⏭️ | #6 (`attribute_not_exists(pk)` enforced via CDK schema), #9 (`bisectOnError: true` on ESM) | #4 (resource names from CDK env), #5 (`cdk deploy --require-approval never` only when stable) | First infra phase |
+| P4 | ⬜ | — | — | IoT Rules SQL must mirror `threshold.ts` predicate (cross-reference) |
+| P5 | ⬜ | #10 (Step Functions Standard for alerting) | — | Auditable workflow gate |
+| P6 | ⬜ | — | — | Observability stack |
+| P7 | ⬜ | #1 (validate at the API boundary too) | — | Read-only IAM |
+| P8 | ⬜ | — | — | Pluggable observability via EMF |
+| P9 | ⬜ | — | #6 (`cdk destroy --all` after dev sessions) | Final teardown verification |
+
+**Legend.** Invariants and rules numbered per `CLAUDE.md`. The matrix is
+additive — once a clause is satisfied by an earlier phase, later phases
+inherit and must not violate it.
 
 ## Notation
 
@@ -40,7 +115,7 @@ elapsed time depends on focus and velocity.
 | # | Phase | Status | Primary deliverable | Decision log |
 |---|---|---|---|---|
 | 1 | Lib & test foundation | ✅ | Types · validator · threshold · repository · Powertools singletons · unit tests | [`docs/decisions/day-01-lib-foundation.md`](docs/decisions/day-01-lib-foundation.md) |
-| 2 | Processor Lambda | ⏭️ | Kinesis ESM handler with Powertools idempotency, EMF metrics, partial-failure isolation | _pending_ |
+| 2 | Processor Lambda | ✅ | Kinesis ESM handler with Powertools idempotency, EMF metrics, partial-failure isolation | [`docs/decisions/phase-02-processor.md`](docs/decisions/phase-02-processor.md) |
 | 3 | Storage + processing stacks | ⬜ | CDK: Kinesis · DynamoDB · processor Lambda + ESM · DLQ — pipeline live | _pending_ |
 | 4 | IoT Core + simulator | ⬜ | IoT Rules: telemetry → Kinesis · threshold breaches → Step Functions · simulator Lambda | _pending_ |
 | 5 | Alert workflow | ⬜ | Step Functions Standard: NotifyOps → Wait → IsAcknowledged → Escalate · alert-handler Lambda | _pending_ |
@@ -76,28 +151,32 @@ DynamoDB abstraction with exhaustive unit tests. No infrastructure yet.
 
 ---
 
-## Phase 2 — Processor Lambda ⏭️
+## Phase 2 — Processor Lambda ✅
 
 **Goal.** Wire the Kinesis Event Source Mapping → handler → repository path
 with idempotency, partial-failure isolation, and structured observability.
 
 **Sub-phases & deliverables:**
-- ⬜ **P2.1** Processor handler — `src/handlers/processor.ts`
+- ✅ **P2.1** Processor handler — `src/handlers/processor.ts`
   - Decode Kinesis record → `validateSensorEvent()` → `repo.putReading()`
   - Wrapped: `tracer.captureLambdaHandler` + `logger.injectLambdaContext`
-  - Per-record `makeIdempotent` keyed on `record.kinesis.sequenceNumber`
-  - Catch `ConditionalCheckFailedException` → treat as no-op success
-  - All other errors → push to `batchItemFailures`
-  - EMF metrics: `EventsProcessed`, `ProcessingLatencyMs`, `ValidationErrors`, `PartialBatchFailures`
+  - Per-record `makeIdempotent` keyed on `record.kinesis.sequenceNumber` via `eventKeyJmesPath`
+  - Catches `ConditionalCheckFailedException` (by `err.name`) → no-op success
+  - All other errors → `batchItemFailures` entry
+  - EMF metrics: `EventsProcessed` + `ProcessingLatencyMs` (with `ReadingType` dimension via `metrics.singleMetric()`); `ValidationErrors`, `DuplicateWrites`, `PartialBatchFailures` on the shared instance
   - `metrics.publishStoredMetrics()` in `finally` (hard rule #8)
-- ⬜ **P2.2** Processor unit tests — `src/__tests__/processor.test.ts`
+- ✅ **P2.2** Processor unit tests — `src/__tests__/processor.test.ts`
   - Happy path — full batch processed
-  - One bad record — only that record fails, rest succeed
-  - Duplicate-write — `ConditionalCheckFailedException` swallowed as success
-  - Full batch failure — every record in `batchItemFailures`
-  - Idempotency cache hit — second invocation is a no-op
-- ⬜ **P2.3** Decision log — `docs/decisions/phase-02-processor.md`
-- ⬜ **P2.4** Review checklist & interview-prep updates for Phase 2
+  - Mixed batch — single bad record isolated
+  - Full-failure batch — every record in `batchItemFailures`
+  - Conditional swallow — `ConditionalCheckFailedException` returns success
+  - Throttling does NOT get swallowed
+  - Non-Error thrown values do NOT get swallowed
+  - Mixed failure modes (validation + duplicate + throttle in one batch)
+  - `isConditionalCheckFailed` helper unit tests (name match, similar names, non-Error values)
+  - `IDEMPOTENCY_TTL_SECONDS` bounds check vs. Kinesis retention
+- ✅ **P2.3** Decision log — `docs/decisions/phase-02-processor.md` (3 pre-flight decisions captured)
+- ✅ **P2.4** Review checklist & interview-prep updates for Phase 2
 
 **Acceptance criteria:**
 - All processor test cases green
@@ -111,7 +190,7 @@ with idempotency, partial-failure isolation, and structured observability.
 
 ---
 
-## Phase 3 — Storage + processing CDK stacks ⬜
+## Phase 3 — Storage + processing CDK stacks ⏭️
 
 **Goal.** First infrastructure phase. Stand up the storage and streaming
 backbone, deploy the processor Lambda with the ESM, accept live events.
@@ -289,19 +368,39 @@ These run alongside the phases, not as a phase of their own.
 This file is updated at the end of each working day:
 1. Flip the sub-phase status symbols (✅) for what got finished.
 2. If a phase is fully done, flip the phase symbol in the **Phases at a glance** table.
-3. Move the "Active phase" pointer in **Current state** if it advanced.
-4. Append an entry to the **Daily log** below.
-5. Confirm any new decision log files are linked from the phase section.
+3. Update the **Progress** section:
+   - Recompute the overall percentage (`done / total` sub-phases).
+   - Update the per-phase bars (each `█` = 10% done; e.g., 4/4 = `██████████`, 2/4 = `█████░░░░░`).
+   - Flip the corresponding row's status icon and counts.
+   - In the Mermaid Gantt, change the phase's keyword (`active` → `done`) and start the next phase's bar with `:active`.
+   - Update the Phase × Requirements matrix status column.
+4. Move the "Active phase" pointer in **Current state** if it advanced.
+5. Append an entry to the **Daily log** below.
+6. Confirm any new decision log files are linked from the phase section.
 
 ### Daily log
 
 Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started P<N>.<M>: <brief summary>.`
 
-- **Day 1** (2026-05-08) — completed **P1.1**–**P1.9**: full Phase 1 shipped.
-  Domain types, Zod validator at the I/O boundary, pure threshold module,
-  `SensorRepository` with conditional writes, three Powertools singletons,
-  unit-test suites for validator/threshold/repository, npm/TS-strict/Jest/
-  ESLint scaffold, docs foundation (`docs/README.md`,
-  `docs/review-checklist.md`, `docs/decisions/day-01-lib-foundation.md`,
-  `docs/_private/interview-prep.md`), and this `ROADMAP.md`. **Open:** local
-  verification of `npm install && npm test && npm run build && npm run lint`.
+- **Day 1** (2026-05-08) — completed **P1.1**–**P1.9** (full Phase 1) and
+  **P2.1**–**P2.4** (full Phase 2).
+  - **Phase 1:** domain types, Zod validator at the I/O boundary, pure
+    threshold module, `SensorRepository` with conditional writes, three
+    Powertools singletons, unit-test suites for validator/threshold/
+    repository, npm/TS-strict/Jest/ESLint scaffold, docs foundation
+    (`docs/README.md`, `docs/review-checklist.md`,
+    `docs/decisions/day-01-lib-foundation.md`,
+    `docs/_private/interview-prep.md`), and `ROADMAP.md`.
+  - **Phase 2:** three pre-flight decisions captured with cost-lens
+    annotations (idempotency expiry 24-26 h, conditional-error swallow
+    scope strict, ReadingType metric dimension included);
+    `src/handlers/processor.ts` with Powertools idempotency keyed on the
+    Kinesis sequence number, per-record dimensioned EMF metrics via
+    `metrics.singleMetric()`, and `batchItemFailures` partial-failure
+    response; `src/__tests__/processor.test.ts` covering happy path,
+    mixed-failure batches, conditional-swallow, throttle non-swallow,
+    helper unit tests, and TTL bounds. Phase 2 decision log at
+    `docs/decisions/phase-02-processor.md`; cost-awareness framing added
+    to `docs/_private/interview-prep.md`.
+  - **Open:** local verification of
+    `npm install && npm test && npm run build && npm run lint`.

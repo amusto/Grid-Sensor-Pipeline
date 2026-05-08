@@ -8,7 +8,7 @@ what's a known open question.
 
 ---
 
-## Day 1 — Lib & test foundation (Types · Validator · Threshold · Repository)
+## Phase 1 — Lib & test foundation (Types · Validator · Threshold · Repository)
 
 ### Implemented
 
@@ -87,24 +87,50 @@ See `decisions/day-01-lib-foundation.md`.
 
 ---
 
-## Day 2 — Processor Lambda (pending)
+## Phase 2 — Processor Lambda
 
-_Will be filled in after Day 2 work — Kinesis ESM handler, Powertools
-idempotency wired against the sequence number, EMF metrics, partial-failure
-response._
+### Pre-flight decisions captured
+
+- [x] **Idempotency expiry: 24-26 h.** Matches Kinesis retention + safety
+      margin. State must outlive the replay window.
+- [x] **`ConditionalCheckFailedException` swallow scope: strict (named-error
+      only).** Fail-loud / fail-quiet asymmetry — only swallow the one error
+      that legitimately means no-op success.
+- [x] **`ReadingType` metric dimension: include.** Bounded low-cardinality
+      slice; sensorId would be a high-cardinality footgun in Datadog.
+- See `decisions/phase-02-processor.md` for full rationale + cost lens.
+
+### To implement
+
+- [ ] **P2.1** `src/handlers/processor.ts` — Kinesis ESM handler with
+      Powertools idempotency, EMF metrics, partial-failure isolation.
+- [ ] **P2.2** `src/__tests__/processor.test.ts` — happy path, mixed batch,
+      conditional-swallow, full failure.
+
+### Open review items (post-implementation)
+
+- [ ] Verify `ConditionalCheckFailedException` is identified by `err.name`,
+      not by `instanceof` (the AWS SDK v3 throws plain `Error` subclasses
+      with the name set).
+- [ ] Confirm `metrics.publishStoredMetrics()` reaches `finally` even on
+      handler-level throws.
+- [ ] Confirm per-record metric dimensioning uses `metrics.singleMetric()`
+      so dimensions don't bleed across records in the same batch.
+- [ ] Confirm `IDEMPOTENCY_TTL_SECONDS` constant is sourced from the same
+      definition that drives the CDK env-var injection on Phase 3.
 
 ---
 
-## Day 3 — Storage stack + live pipeline (pending)
+## Phase 3 — Storage + processing CDK stacks (pending)
 
-## Day 4 — IoT Core stack (pending)
+## Phase 4 — IoT Core stack + simulator (pending)
 
-## Day 5 — Alert workflow (pending)
+## Phase 5 — Alert workflow (pending)
 
-## Day 6 — DLQ + observability (pending)
+## Phase 6 — DLQ + observability (pending)
 
-## Day 7 — Query API (pending)
+## Phase 7 — Query API (pending)
 
-## Day 8 — Datadog bridge (pending)
+## Phase 8 — Datadog bridge (pending)
 
-## Day 9 — README + diagrams + cost teardown (pending)
+## Phase 9 — Polish & teardown (pending)
