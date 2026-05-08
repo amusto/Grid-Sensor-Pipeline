@@ -17,3 +17,6 @@ cdk.out/
 # Env
 .env
 .env.local
+
+# Private docs — interview prep, drafts, recruiter notes
+docs/_private/
