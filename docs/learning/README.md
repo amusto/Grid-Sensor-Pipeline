@@ -1,0 +1,42 @@
+# Learning notes
+
+Cheatsheets and grounding material for the AWS services this project uses.
+Each note is structured the same way:
+
+1. **Mental model** — the one-paragraph "what this thing actually is" framing.
+2. **Core concepts** — the vocabulary you need to read AWS docs without
+   getting lost.
+3. **Service-specific tuning knobs** — the parameters that matter, with
+   our project's values and rationale.
+4. **Pitfalls** — the four-or-so mistakes most newcomers make.
+5. **Cost levers** — what costs what, ordered by impact.
+6. **Learning resources** — official docs, hands-on workshops, deeper reads.
+
+These are working-engineer cheatsheets, not exhaustive references. The
+goal is fast recall, not comprehensive coverage. When you need the full
+picture, the linked AWS docs are the source of truth.
+
+## Index
+
+| Note | Phase introduced | Status | What it covers |
+|---|---|---|---|
+| [`aws-kinesis.md`](aws-kinesis.md) | P3 | ✅ filled | Data Streams, Firehose, Lambda ESM tuning, partition keys, sequence numbers |
+| [`aws-iot-core.md`](aws-iot-core.md) | P4 | 🚧 stub (concepts + resources) | MQTT topics, X.509 device auth, IoT Rules engine SQL, device shadows |
+| [`aws-step-functions.md`](aws-step-functions.md) | P5 | 🚧 stub (concepts + resources) | Standard vs Express workflows, state types, error handling, JSONPath |
+| _(Lambda Powertools)_ | recurring | ⬜ planned | Logger, Tracer, Metrics, Idempotency utilities |
+| _(DynamoDB)_ | P3 | ⬜ planned | Single-table design, partition keys, GSIs, on-demand vs provisioned |
+| _(CDK)_ | P3 | ⬜ planned | Constructs, stacks, cross-stack refs, NodejsFunction bundling |
+
+**Stub vs filled.** A 🚧 stub note has the conceptual content,
+service-specific tuning knobs framework, pitfalls, cost levers, and
+learning resources — everything that's stable up-front. The TODO
+sections (project-specific code anchors, CLI commands tested against
+real deploys) are filled when the corresponding phase ships.
+
+## Convention
+
+When a phase introduces a new service, a learning note is added (or
+expanded) at the same time the decision log is written. The decision log
+captures *why we picked this option*; the learning note captures *what
+the option even means.* Together they give future-you (and any code
+reviewer) the full context.
