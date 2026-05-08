@@ -121,7 +121,65 @@ See `decisions/day-01-lib-foundation.md`.
 
 ---
 
-## Phase 3 — Storage + processing CDK stacks (pending)
+## Phase 3 — Storage + processing CDK stacks
+
+### Pre-flight decisions captured
+
+- [x] **DynamoDB billing: on-demand (PAY_PER_REQUEST).** Bursty grid event
+      traffic; provisioned would either over-provision baseline or throttle
+      the spike that matters most.
+- [x] **Kinesis: 1 shard, 24h retention.** Coupled to processor's 25h
+      idempotency TTL. Extending retention here REQUIRES extending the TTL.
+- [x] **Firehose buffer: 5 min / 5 MB GZIP JSON.** Industry-default
+      buffering; Parquet conversion deferred.
+- [x] **Lambda: 512 MB, 30s timeout, ESM batch=10, window=1s.** Memory
+      floor for Powertools without swap; small batches keep p99 down.
+- [x] **ESM safety flags: bisectBatchOnError + reportBatchItemFailures
+      + retry=5 + DLQ via SQS.** Each flag covers a distinct failure mode.
+- [x] **RemovalPolicy.DESTROY everywhere** — POC posture. `cdk destroy`
+      must actually remove resources to keep AWS bills clean.
+- [x] **Three separate stacks** — boundaries follow lifecycle (storage
+      persists, kinesis is stable, processing changes most often).
+- See `decisions/phase-03-storage-processing.md` for full rationale + cost lens.
+
+### Implemented
+
+- [x] **P3.1** `cdk.json` + `infra/bin/app.ts` — three stacks composed via props
+- [x] **P3.2** `infra/lib/storage-stack.ts` — readings table (+GSI on
+      readingType+timestamp) + idempotency table
+- [x] **P3.3** `infra/lib/kinesis-stack.ts` — Kinesis Data Stream + Firehose
+      → S3 archive (lifecycle: IA@30d → Glacier@90d → expire@365d)
+- [x] **P3.4** `infra/lib/processing-stack.ts` — Processor Lambda (Node 20,
+      512 MB, X-Ray active) + Kinesis ESM with all four safety flags +
+      SQS DLQ (7-day retention)
+- [x] **CDK template assertions** — `infra/__tests__/processing-stack.test.ts`
+      locks bisectBatchOnError, ReportBatchItemFailures, retry cap, DLQ wiring
+
+### To run on local machine
+
+- [ ] **P3.5** `npm install` (picks up new devDeps: aws-cdk, esbuild, ts-node, source-map-support)
+- [ ] **P3.5** `npm test` — all 5 suites green (validator, threshold, repository, processor, processing-stack)
+- [ ] **P3.5** `cdk bootstrap` — first-time per AWS account/region
+- [ ] **P3.5** `cdk synth` — verify all three stacks render
+- [ ] **P3.5** `cdk deploy --all` — provision storage → kinesis → processing
+- [ ] **P3.6** Smoke test (recipe in the user's response) — put a record on
+      Kinesis, observe in DynamoDB
+- [ ] **P3.6** Force a poison-pill record, observe DLQ delivery
+- [ ] **P3.6** Verify idempotent retry: put the same record twice, see one
+      DynamoDB item
+
+### Open review items (post-deploy)
+
+- [ ] Verify the GSI on readings table returns expected results for a
+      cross-sensor time-window query (real test before Phase 7's query API).
+- [ ] Confirm the `'￿'` SK upper-bound sentinel works with DynamoDB's
+      `BETWEEN` against real data.
+- [ ] Consider adding CDK snapshot tests on `storage-stack` and
+      `kinesis-stack` for completeness (deferred from Phase 3).
+- [ ] Once steady-state traffic is known, revisit DynamoDB billing mode
+      (provisioned + autoscaling may cross over).
+
+---
 
 ## Phase 4 — IoT Core stack + simulator (pending)
 

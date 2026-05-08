@@ -12,7 +12,12 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "lint": "eslint \"src/**/*.ts\""
+    "lint": "eslint \"src/**/*.ts\" \"infra/**/*.ts\"",
+    "cdk": "cdk",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy --all",
+    "destroy": "cdk destroy --all"
   },
   "dependencies": {
     "@aws-lambda-powertools/idempotency": "^2",
@@ -29,11 +34,15 @@
     "@types/aws-lambda": "^8",
     "@types/jest": "^29",
     "@types/node": "^20",
+    "aws-cdk": "^2",
     "aws-cdk-lib": "^2",
     "constructs": "^10",
+    "esbuild": "^0.20",
     "eslint": "^9",
     "jest": "^29",
+    "source-map-support": "^0.5",
     "ts-jest": "^29",
+    "ts-node": "^10",
     "typescript": "^5",
     "typescript-eslint": "^8"
   }

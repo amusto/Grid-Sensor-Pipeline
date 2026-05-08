@@ -21,9 +21,9 @@ elapsed time depends on focus and velocity.
 ## Current state
 
 **Today:** Day 1 (2026-05-08)
-**Active phase:** Phase 3 — Storage + processing CDK stacks (next up)
+**Active phase:** Phase 3 — Storage + processing CDK stacks (code shipped; deploy pending on your machine)
 **Last shipped:** Phase 2 — Processor Lambda
-**Local verification pending:** `npm install && npm test && npm run build && npm run lint` on the user's machine (sandbox npm registry blocked).
+**Local verification pending:** `npm install && npm test && npm run build && npm run lint`. Then `cdk bootstrap && cdk deploy --all` for Phase 3.
 
 ---
 
@@ -32,7 +32,7 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-[██████░░░░░░░░░░░░░░] 31%   (13 / 41 sub-phases)
+[█████████░░░░░░░░░░░] 41%   (17 / 41 sub-phases)
 ```
 
 ### By phase
@@ -41,7 +41,7 @@ elapsed time depends on focus and velocity.
 |---|---|---|---|---|---|
 | 1 | Lib & test foundation        | `██████████` | 100% | 9/9 | ✅ |
 | 2 | Processor Lambda             | `██████████` | 100% | 4/4 | ✅ |
-| 3 | Storage + processing stacks  | `░░░░░░░░░░` |   0% | 0/6 | ⏭️ |
+| 3 | Storage + processing stacks  | `███████░░░` |  67% | 4/6 | 🚧 |
 | 4 | IoT Core + simulator         | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
 | 5 | Alert workflow               | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
 | 6 | DLQ + observability          | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
@@ -65,7 +65,7 @@ gantt
     P2 Processor Lambda         :done, p2, 2026-05-08, 1d
 
     section Infrastructure
-    P3 Storage + processing CDK :active, p3, 2026-05-09, 2d
+    P3 Storage + processing CDK :active, p3, 2026-05-08, 1d
     P4 IoT Core + simulator     :p4, after p3, 1d
     P5 Alert workflow           :p5, after p4, 1d
     P6 DLQ + observability      :p6, after p5, 1d
@@ -88,7 +88,7 @@ satisfies. This is the requirements-alignment view: progress isn't just
 |---|---|---|---|---|
 | P1 | ✅ | #2 (no I/O in `lib/`), #3 (`threshold.ts` is pure) | #1 (no `any`), #2 (no `console.log`), #3 (no bare `catch`), #4 (no hardcoded names) | Foundation that subsequent invariants are enforced against |
 | P2 | ✅ | #1 (validate at I/O boundary), #4 (no business logic in handler), #5 (idempotency = Kinesis seq#), #7 (always `batchItemFailures`), #8 (metrics in `finally`) | #1, #2, #3, #4 (continued) | Six contract clauses honored in 195 lines |
-| P3 | ⏭️ | #6 (`attribute_not_exists(pk)` enforced via CDK schema), #9 (`bisectOnError: true` on ESM) | #4 (resource names from CDK env), #5 (`cdk deploy --require-approval never` only when stable) | First infra phase |
+| P3 | 🚧 | #6 (`attribute_not_exists(pk)` enforced at write time), #9 (`bisectBatchOnError: true` on ESM, locked by template assertions) | #4 (resource names from CDK context), #5 (no `--require-approval never` until stable) | Code shipped; deploy + smoke test pending on user machine |
 | P4 | ⬜ | — | — | IoT Rules SQL must mirror `threshold.ts` predicate (cross-reference) |
 | P5 | ⬜ | #10 (Step Functions Standard for alerting) | — | Auditable workflow gate |
 | P6 | ⬜ | — | — | Observability stack |
@@ -116,7 +116,7 @@ inherit and must not violate it.
 |---|---|---|---|---|
 | 1 | Lib & test foundation | ✅ | Types · validator · threshold · repository · Powertools singletons · unit tests | [`docs/decisions/day-01-lib-foundation.md`](docs/decisions/day-01-lib-foundation.md) |
 | 2 | Processor Lambda | ✅ | Kinesis ESM handler with Powertools idempotency, EMF metrics, partial-failure isolation | [`docs/decisions/phase-02-processor.md`](docs/decisions/phase-02-processor.md) |
-| 3 | Storage + processing stacks | ⬜ | CDK: Kinesis · DynamoDB · processor Lambda + ESM · DLQ — pipeline live | _pending_ |
+| 3 | Storage + processing stacks | 🚧 | CDK: Kinesis · DynamoDB · processor Lambda + ESM · DLQ — pipeline live | [`docs/decisions/phase-03-storage-processing.md`](docs/decisions/phase-03-storage-processing.md) |
 | 4 | IoT Core + simulator | ⬜ | IoT Rules: telemetry → Kinesis · threshold breaches → Step Functions · simulator Lambda | _pending_ |
 | 5 | Alert workflow | ⬜ | Step Functions Standard: NotifyOps → Wait → IsAcknowledged → Escalate · alert-handler Lambda | _pending_ |
 | 6 | DLQ + observability | ⬜ | DLQ inspector Lambda · CloudWatch dashboard · alarms (DLQ depth, P99, SF failures) | _pending_ |
@@ -190,17 +190,17 @@ with idempotency, partial-failure isolation, and structured observability.
 
 ---
 
-## Phase 3 — Storage + processing CDK stacks ⏭️
+## Phase 3 — Storage + processing CDK stacks 🚧
 
 **Goal.** First infrastructure phase. Stand up the storage and streaming
 backbone, deploy the processor Lambda with the ESM, accept live events.
 
 **Sub-phases & deliverables:**
-- ⬜ **P3.1** CDK app entrypoint — `infra/bin/app.ts`, `cdk.json`
-- ⬜ **P3.2** Storage stack — `infra/lib/storage-stack.ts` (readings table with `pk`/`sk`/TTL + GSI on `readingType + timestamp`, idempotency table)
-- ⬜ **P3.3** Kinesis stack — `infra/lib/kinesis-stack.ts` (Data Stream 1 shard / 24 h retention + Firehose → S3 cold archive, Parquet by date/sensorId)
-- ⬜ **P3.4** Processing stack — `infra/lib/processing-stack.ts` (Processor Lambda · ESM with `bisectOnError: true` + `batchItemFailures` · SQS DLQ · IAM grants)
-- ⬜ **P3.5** Bootstrap + first deploy — `cdk bootstrap`, `cdk deploy --all`
+- ✅ **P3.1** CDK app entrypoint — `infra/bin/app.ts`, `cdk.json`
+- ✅ **P3.2** Storage stack — `infra/lib/storage-stack.ts` (readings table with `pk`/`sk`/TTL + GSI on `readingType + timestamp`, idempotency table)
+- ✅ **P3.3** Kinesis stack — `infra/lib/kinesis-stack.ts` (Data Stream 1 shard / 24 h retention + Firehose → S3 cold archive with lifecycle IA→Glacier→expire; JSON+GZIP, Parquet deferred)
+- ✅ **P3.4** Processing stack — `infra/lib/processing-stack.ts` (Processor Lambda · ESM with `bisectBatchOnError` + `reportBatchItemFailures` + retry=5 · SQS DLQ · IAM grants); CDK template assertions in `infra/__tests__/processing-stack.test.ts` lock the safety flags
+- ⬜ **P3.5** Bootstrap + first deploy — `cdk bootstrap`, `cdk deploy --all` (user machine)
 - ⬜ **P3.6** Smoke test — `aws kinesis put-record` → DynamoDB row, idempotent retry verified, DLQ poison-pill verified
 
 **Acceptance criteria:**
@@ -402,5 +402,15 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     helper unit tests, and TTL bounds. Phase 2 decision log at
     `docs/decisions/phase-02-processor.md`; cost-awareness framing added
     to `docs/_private/interview-prep.md`.
-  - **Open:** local verification of
-    `npm install && npm test && npm run build && npm run lint`.
+  - **Phase 3 (in flight):** seven pre-flight decisions captured with
+    cost-lens annotations (DynamoDB on-demand, Kinesis 1-shard/24h,
+    Firehose 5min/5MB GZIP, Lambda 512MB, ESM safety flags, DESTROY
+    everywhere, three-stack composition); CDK app entrypoint + cdk.json;
+    `infra/lib/storage-stack.ts` (readings table + GSI + idempotency
+    table); `infra/lib/kinesis-stack.ts` (Data Stream + Firehose + S3
+    archive with lifecycle); `infra/lib/processing-stack.ts` (Processor
+    Lambda + ESM with all four safety flags + SQS DLQ);
+    `infra/__tests__/processing-stack.test.ts` template assertions that
+    lock CLAUDE.md hard rule #9 in the synthesized CFN. **Open:** local
+    `npm install && npm test`; then `cdk bootstrap && cdk deploy --all`
+    and Phase 3.6 smoke test.

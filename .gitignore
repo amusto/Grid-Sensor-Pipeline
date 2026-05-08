@@ -20,3 +20,5 @@ cdk.out/
 
 # Private docs — interview prep, drafts, recruiter notes
 docs/_private/
+
+test-output.log

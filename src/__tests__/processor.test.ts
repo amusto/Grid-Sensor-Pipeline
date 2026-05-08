@@ -2,10 +2,16 @@
  * Processor handler tests — partial-batch-failure semantics, conditional-
  * write swallow, validation routing.
  *
- * Strategy: mock the SensorRepository at the module level and short-circuit
- * Powertools' `makeIdempotent` to a passthrough so we test the handler's
- * own logic (validation, error classification, batchItemFailures shape)
- * without standing up a DynamoDB persistence layer.
+ * Strategy:
+ *   1. Mock SensorRepository at the module level so DynamoDB calls become
+ *      controllable promises.
+ *   2. Short-circuit Powertools' `makeIdempotent` to a passthrough so we
+ *      exercise the handler's logic without a real DynamoDB persistence
+ *      layer.
+ *   3. Test against `__testables.baseHandler` (the unwrapped function),
+ *      not against the Middy-wrapped `handler`. The middleware chain is
+ *      Powertools' responsibility; our concern is the partial-failure
+ *      contract.
  *
  * Idempotency-cache behaviour itself (the DynamoDB round-trip) is verified
  * by the integration smoke test on Phase 3 — see review-checklist.md.
@@ -44,8 +50,10 @@ beforeAll(() => {
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
 
-import type { Context, KinesisStreamEvent, KinesisStreamRecord } from 'aws-lambda';
-import { __testables, handler } from '../handlers/processor';
+import type { KinesisStreamEvent, KinesisStreamRecord } from 'aws-lambda';
+import { __testables } from '../handlers/processor';
+
+const { baseHandler } = __testables;
 
 const VALID_PAYLOAD = {
   sensorId: 'sensor-001',
@@ -81,22 +89,6 @@ const buildEvent = (records: KinesisStreamRecord[]): KinesisStreamEvent => ({
   Records: records,
 });
 
-const mockContext: Context = {
-  callbackWaitsForEmptyEventLoop: false,
-  functionName: 'grid-sensor-processor',
-  functionVersion: '$LATEST',
-  invokedFunctionArn:
-    'arn:aws:lambda:us-east-1:123456789012:function:grid-sensor-processor',
-  memoryLimitInMB: '256',
-  awsRequestId: 'test-request-id',
-  logGroupName: '/aws/lambda/grid-sensor-processor',
-  logStreamName: '2026/05/08/[$LATEST]abcd1234',
-  getRemainingTimeInMillis: () => 30000,
-  done: () => undefined,
-  fail: () => undefined,
-  succeed: () => undefined,
-};
-
 class ConditionalCheckFailedException extends Error {
   constructor() {
     super('The conditional request failed');
@@ -114,7 +106,7 @@ describe('processor handler', () => {
         buildRecord('seq-3', { ...VALID_PAYLOAD, readingType: 'current' }),
       ]);
 
-      const result = await handler(event, mockContext, () => undefined);
+      const result = await baseHandler(event);
 
       expect(result).toEqual({ batchItemFailures: [] });
       expect(mockPutReading).toHaveBeenCalledTimes(3);
@@ -130,7 +122,7 @@ describe('processor handler', () => {
         buildRecord('seq-good-2', { ...VALID_PAYLOAD, readingType: 'voltage' }),
       ]);
 
-      const result = await handler(event, mockContext, () => undefined);
+      const result = await baseHandler(event);
 
       expect(result.batchItemFailures).toEqual([
         { itemIdentifier: 'seq-bad' },
@@ -146,7 +138,7 @@ describe('processor handler', () => {
         buildRecord('seq-bad-2', { malformed: 2 }),
       ]);
 
-      const result = await handler(event, mockContext, () => undefined);
+      const result = await baseHandler(event);
 
       expect(result.batchItemFailures).toEqual([
         { itemIdentifier: 'seq-bad-1' },
@@ -163,7 +155,7 @@ describe('processor handler', () => {
       );
       const event = buildEvent([buildRecord('seq-dup', VALID_PAYLOAD)]);
 
-      const result = await handler(event, mockContext, () => undefined);
+      const result = await baseHandler(event);
 
       // Duplicate is NOT in batchItemFailures — the record was already
       // persisted, retry succeeds silently.
@@ -179,7 +171,7 @@ describe('processor handler', () => {
       );
       const event = buildEvent([buildRecord('seq-throttle', VALID_PAYLOAD)]);
 
-      const result = await handler(event, mockContext, () => undefined);
+      const result = await baseHandler(event);
 
       expect(result.batchItemFailures).toEqual([
         { itemIdentifier: 'seq-throttle' },
@@ -190,7 +182,7 @@ describe('processor handler', () => {
       mockPutReading.mockRejectedValueOnce('string error');
       const event = buildEvent([buildRecord('seq-weird', VALID_PAYLOAD)]);
 
-      const result = await handler(event, mockContext, () => undefined);
+      const result = await baseHandler(event);
 
       expect(result.batchItemFailures).toEqual([
         { itemIdentifier: 'seq-weird' },
@@ -219,7 +211,7 @@ describe('processor handler', () => {
         buildRecord('seq-4', VALID_PAYLOAD),
       ]);
 
-      const result = await handler(event, mockContext, () => undefined);
+      const result = await baseHandler(event);
 
       expect(result.batchItemFailures).toEqual([
         { itemIdentifier: 'seq-2' },

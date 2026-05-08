@@ -128,6 +128,72 @@ change needed but a small cost increment on the next billing cycle.
 
 ---
 
+## P2 follow-up — manual instrumentation over Middy or class decorators
+
+**Discovered during local verification.** The original handler used the v1
+Powertools function-style wrapper pattern:
+
+```ts
+export const handler = tracer.captureLambdaHandler(
+  logger.injectLambdaContext(baseHandler),
+);
+```
+
+In v2, `captureLambdaHandler()` returns a `MethodDecorator`, not a
+function wrapper — calling it with a handler argument doesn't wrap
+anything; the deployed Lambda would crash on first invocation, and
+TypeScript reports the call-signature mismatch. So the wrapper had to
+change.
+
+**First attempt: Middy middleware.** The Powertools v2 docs lead with
+Middy as the recommended composition style. But middy v5.x is ESM-only
+(`"type": "module"` and an `exports` map without a `"require"`
+condition); ts-jest defaults to CommonJS and Jest's resolver bails when
+required from a CJS context. Configuring Jest to run ESM is achievable
+but adds non-trivial complexity (`extensionsToTreatAsEsm`,
+`useESM: true`, `--experimental-vm-modules`, transform tweaks) for a
+3-line wrapper. Downgrading middy to v4 (the last CJS line) would work
+but freezes a transitive dependency on a deprecated major.
+
+**Final decision — manual instrumentation.**
+
+```ts
+export const handler = async (
+  event: KinesisStreamEvent,
+  context: Context,
+): Promise<KinesisStreamBatchResponse> => {
+  logger.addContext(context);
+  return baseHandler(event);
+};
+```
+
+**Why this is the right call here.**
+
+- **X-Ray.** Lambda's `tracing: ACTIVE` already wraps the entire
+  invocation in a segment. Our per-record subsegments inside
+  `processRecord` give us the granular breakdowns we'd actually use. The
+  function-level subsegment Middy would add is redundant.
+- **Logger context.** `logger.addContext(context)` decorates subsequent
+  log lines with the Lambda request ID and function metadata. One line.
+- **Metrics.** `metrics.publishStoredMetrics()` is already in the
+  handler's `finally` per CLAUDE.md hard rule #8.
+- **No extra dependency.** Bundle stays smaller, no ESM/CJS interop
+  knot, no version-pinning a deprecated middy major.
+
+**Concept the pattern encodes.** Use libraries when they solve a problem
+you actually have; manual instrumentation when the library would
+introduce more complexity than it removes. Middy is the right answer for
+deeply composed handlers (auth + validation + tracing + logging across
+many endpoints). For one Kinesis processor, three lines of explicit
+instrumentation is clearer to read and easier to debug.
+
+**Tradeoff knowingly accepted.** If we ever add cross-cutting concerns —
+auth, multi-step validation, response transformations — we'll revisit
+and adopt Middy (with the Jest ESM config it requires) or the class
+decorator pattern.
+
+---
+
 ## Cross-cutting framing for Phase 2
 
 All three decisions exhibit the same meta-pattern: **a runtime knob whose

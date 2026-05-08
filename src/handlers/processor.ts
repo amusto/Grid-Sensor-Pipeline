@@ -24,6 +24,7 @@
  */
 
 import {
+  type Context,
   type KinesisStreamBatchResponse,
   type KinesisStreamEvent,
   type KinesisStreamRecord,
@@ -182,12 +183,42 @@ const baseHandler = async (
   }
 };
 
-export const handler = tracer.captureLambdaHandler(
-  logger.injectLambdaContext(baseHandler),
-);
+/**
+ * Manual instrumentation wrapper.
+ *
+ * In Powertools v2, `tracer.captureLambdaHandler` and
+ * `logger.injectLambdaContext` are method decorators, not function
+ * wrappers. The two recommended composition patterns are class+decorators
+ * or Middy middleware. We use neither for two reasons:
+ *
+ *   1. Middy v5+ is ESM-only; Jest with ts-jest defaults to CJS, and
+ *      configuring Jest's ESM support adds non-trivial complexity for
+ *      what is essentially a 3-line wrapper.
+ *   2. The instrumentation we need at the boundary is small:
+ *      - X-Ray: Lambda's `tracing: ACTIVE` already wraps the entire
+ *        invocation in a segment. Our per-record subsegments inside
+ *        `processRecord` give us record-level breakdowns. No additional
+ *        function-level subsegment is required.
+ *      - Logger: `logger.addContext(context)` decorates subsequent log
+ *        lines with the Lambda request ID and function metadata for
+ *        correlation. One line.
+ *      - Metrics: `metrics.publishStoredMetrics()` is already in the
+ *        handler's `finally` per CLAUDE.md hard rule #8.
+ *
+ * The result is a handler that does exactly what we need, with no
+ * additional dependencies and a clear contract a reviewer can read in 30
+ * seconds.
+ */
+export const handler = async (
+  event: KinesisStreamEvent,
+  context: Context,
+): Promise<KinesisStreamBatchResponse> => {
+  logger.addContext(context);
+  return baseHandler(event);
+};
 
-// Exported for unit tests — lets us exercise the same code path without
-// going through the X-Ray + Lambda-context middleware wrappers.
+// Exported for unit tests — lets us exercise the partial-failure logic
+// directly without standing up Middy's middleware chain.
 export const __testables = {
   baseHandler,
   isConditionalCheckFailed,
