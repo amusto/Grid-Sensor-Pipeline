@@ -289,34 +289,24 @@ See `decisions/day-01-lib-foundation.md`.
       locks Standard type, X-Ray, ALL-level logging, runtime, env vars,
       SNS topic + grant.
 
-### To run on local machine
+### Run on local machine — completed
 
-- [ ] **P5** `npm install` — picks up `@aws-sdk/client-sns`.
-- [ ] **P5** `npm test` — 8 suites green (validator, threshold,
-      repository, processor, processing-stack, kinesis-stack, iot-stack,
-      alert-workflow-stack).
-- [ ] **P5** `npm run synth` — verify all five stacks render.
-- [ ] **P5** `npm run deploy` — provisions `GridSensorAlertWorkflowStack`
-      and updates `GridSensorIotStack` with the new `ThresholdAlertRule`.
-- [ ] **P5** Smoke test: trigger breach, verify Step Functions execution
-      starts (don't wait 15 minutes for completion):
-      ```bash
-      npm run simulate -- --count 5 --breach
-      sleep 5
-      ARN=$(aws cloudformation describe-stacks \
-        --stack-name GridSensorAlertWorkflowStack \
-        --query "Stacks[0].Outputs[?OutputKey=='AlertWorkflowArn'].OutputValue" \
-        --output text)
-      aws stepfunctions list-executions \
-        --state-machine-arn $ARN --max-results 10
-      ```
-      Expected: ≥1 execution per breach reading. SQL filter only fires
-      on voltage/frequency, so 5 breach events ≈ 2 executions
-      (since simulator picks readingType randomly).
-- [ ] **P5** Watch the alert handler logs to confirm SNS publish:
-      ```bash
-      aws logs tail /aws/lambda/grid-sensor-pipeline-alert-handler --since 5m
-      ```
+- [x] **P5** `npm install` — `@aws-sdk/client-sns` installed
+- [x] **P5** `npm test` — all 8 suites green
+- [x] **P5** `npm run synth` — all 5 stacks render
+- [x] **P5** `npm run deploy` — `GridSensorAlertWorkflowStack` provisioned;
+      `GridSensorIotStack` updated with `ThresholdAlertRule` and
+      `StepFunctionsStart` inline policy. L2 interface drift fix landed
+      in flight (`stateMachineName` exposed as separate prop on
+      `AlertWorkflowStack`)
+- [x] **P5** Smoke test — `npm run simulate -- --count 5 --breach`
+      started 4 Step Functions executions (all `RUNNING` in
+      `WaitForAck` state). Bimodal Gaussian distribution as designed:
+      frequency 59.092 Hz, voltage 109.876/111.25/129.411 V across
+      sensor-002/sensor-003
+- [x] **P5** Alert handler logs confirmed all 4 executions reached
+      `Alert notified` with `severity: P2`, `thresholdBreached: true`,
+      and EMF metrics emitted with `ReadingType` dimension
 
 ### Open review items
 

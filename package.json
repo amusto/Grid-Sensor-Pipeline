@@ -34,6 +34,7 @@
     "zod": "^3"
   },
   "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.14.0",
     "@types/aws-lambda": "^8",
     "@types/jest": "^29",
     "@types/node": "^20",
