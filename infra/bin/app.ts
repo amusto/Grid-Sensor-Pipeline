@@ -14,6 +14,7 @@ import { StorageStack } from '../lib/storage-stack';
 import { KinesisStack } from '../lib/kinesis-stack';
 import { ProcessingStack } from '../lib/processing-stack';
 import { IotStack } from '../lib/iot-stack';
+import { AlertWorkflowStack } from '../lib/alert-workflow-stack';
 
 const app = new cdk.App();
 
@@ -46,11 +47,19 @@ new ProcessingStack(app, 'GridSensorProcessingStack', {
   stream: kinesis.stream,
 });
 
+const alertWorkflow = new AlertWorkflowStack(app, 'GridSensorAlertWorkflowStack', {
+  env,
+  projectName,
+  description: 'Step Functions Standard Workflow + alert-handler Lambda',
+});
+
 new IotStack(app, 'GridSensorIotStack', {
   env,
   projectName,
   description: 'IoT Rules engine + simulator Lambda',
   stream: kinesis.stream,
+  alertStateMachine: alertWorkflow.stateMachine,
+  alertStateMachineName: alertWorkflow.stateMachineName,
 });
 
 cdk.Tags.of(app).add('project', projectName);

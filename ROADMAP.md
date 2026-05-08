@@ -21,8 +21,8 @@ elapsed time depends on focus and velocity.
 ## Current state
 
 **Today:** Day 1 (2026-05-08)
-**Active phase:** Phase 4 — IoT Core + simulator (code shipped; redeploy + smoke test pending on your machine)
-**Last shipped:** Phase 3 — Storage + processing CDK stacks (deployed, smoke-tested ✅)
+**Active phase:** Phase 5 — Alert workflow (Step Functions + alert handler)
+**Last shipped:** Phase 4 — IoT Core + simulator (deployed, simulator → DynamoDB path verified ✅)
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day.
 
 ---
@@ -32,13 +32,14 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-[█████████░░░░░░░░░░░] 49%   (23 / 47 sub-phases)
+[███████████░░░░░░░░░] 57%   (29 / 51 sub-phases)
 ```
 
-> **Note on the percentage drop.** Phase 10 (live demo dashboard) was
-> added Day 1 evening — adds 6 sub-phases to the denominator. Same
-> 23 sub-phases done; total scope grew from 41 to 47. Honest scope
-> accounting drops the % from 56% to 49%.
+> Phase 5 code shipped (alert handler + workflow stack + IoT rule
+> wiring + CDK assertions). Deploy + smoke test pending on user
+> machine. Total sub-phase denominator is 51: P4 and P5 each got two
+> formal sub-phases for deploy + smoke (P4.5/P4.6, P5.5/P5.6) to match
+> the P3 tracking shape.
 
 ### By phase
 
@@ -47,8 +48,8 @@ elapsed time depends on focus and velocity.
 | 1 | Lib & test foundation        | `██████████` | 100% | 9/9 | ✅ |
 | 2 | Processor Lambda             | `██████████` | 100% | 4/4 | ✅ |
 | 3 | Storage + processing stacks  | `██████████` | 100% | 6/6 | ✅ |
-| 4 | IoT Core + simulator         | `██████████` | 100% | 4/4 | 🚧 |
-| 5 | Alert workflow               | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
+| 4 | IoT Core + simulator         | `██████████` | 100% | 6/6 | ✅ |
+| 5 | Alert workflow               | `███████░░░` |  67% | 4/6 | 🚧 |
 | 6 | DLQ + observability          | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
 | 7 | Query API                    | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
 | 8 | Datadog bridge               | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
@@ -71,7 +72,7 @@ gantt
     section Infrastructure
     P3 Storage and processing     :done,   p3, 2026-05-08, 1d
     P4 IoT Core and simulator     :done,   p4, 2026-05-08, 1d
-    P5 Alert workflow             :active, p5, after p4, 1d
+    P5 Alert workflow             :active, p5, 2026-05-08, 1d
     P6 DLQ and observability      :        p6, after p5, 1d
     section Application
     P7 Query API                  :        p7, after p6, 1d
@@ -94,7 +95,7 @@ satisfies. This is the requirements-alignment view: progress isn't just
 | P2 | ✅ | #1 (validate at I/O boundary), #4 (no business logic in handler), #5 (idempotency = Kinesis seq#), #7 (always `batchItemFailures`), #8 (metrics in `finally`) | #1, #2, #3, #4 (continued) | Six contract clauses honored in 195 lines |
 | P3 | ✅ | #6 (`attribute_not_exists(pk)` enforced at write time, **proven via "Duplicate write swallowed" log entry on duplicate Kinesis put**), #9 (`bisectBatchOnError: true` on ESM, locked by template assertions, **proven via poison-pill → DLQ smoke test**) | #4 (resource names from CDK context), #5 (no `--require-approval never` until stable) | All deployed and smoke-tested end-to-end |
 | P4 | 🚧 | #1 (validation continues at I/O boundary — simulator emits well-formed events that the processor's validator accepts) | #4 (resource names from CDK context) | Code shipped; deploy + smoke test pending. `ThresholdAlertRule` SQL will mirror `threshold.ts` (P5 wires it) |
-| P5 | ⬜ | #10 (Step Functions Standard for alerting) | — | Auditable workflow gate |
+| P5 | 🚧 | #10 (Step Functions Standard for alerting, locked by template assertions) | — | Code shipped; deploy + smoke test pending. Same predicate as `lib/threshold.ts` mirrored into IoT Rules SQL — keep in lockstep |
 | P6 | ⬜ | — | — | Observability stack |
 | P7 | ⬜ | #1 (validate at the API boundary too) | — | Read-only IAM |
 | P8 | ⬜ | — | — | Pluggable observability via EMF |
@@ -122,8 +123,8 @@ inherit and must not violate it.
 | 1 | Lib & test foundation | ✅ | Types · validator · threshold · repository · Powertools singletons · unit tests | [`docs/decisions/day-01-lib-foundation.md`](docs/decisions/day-01-lib-foundation.md) |
 | 2 | Processor Lambda | ✅ | Kinesis ESM handler with Powertools idempotency, EMF metrics, partial-failure isolation | [`docs/decisions/phase-02-processor.md`](docs/decisions/phase-02-processor.md) |
 | 3 | Storage + processing stacks | ✅ | CDK: Kinesis · DynamoDB · processor Lambda + ESM · DLQ — pipeline live | [`docs/decisions/phase-03-storage-processing.md`](docs/decisions/phase-03-storage-processing.md) |
-| 4 | IoT Core + simulator | 🚧 | IoT Rules: telemetry → Kinesis · simulator Lambda (threshold breaches deferred to P5) | [`docs/decisions/phase-04-iot-simulator.md`](docs/decisions/phase-04-iot-simulator.md) |
-| 5 | Alert workflow | ⬜ | Step Functions Standard: NotifyOps → Wait → IsAcknowledged → Escalate · alert-handler Lambda | _pending_ |
+| 4 | IoT Core + simulator | ✅ | IoT Rules: telemetry → Kinesis · simulator Lambda (threshold breaches deferred to P5) | [`docs/decisions/phase-04-iot-simulator.md`](docs/decisions/phase-04-iot-simulator.md) |
+| 5 | Alert workflow | 🚧 | Step Functions Standard: NotifyOps → Wait → IsAcknowledged → Escalate · alert-handler Lambda | [`docs/decisions/phase-05-alert-workflow.md`](docs/decisions/phase-05-alert-workflow.md) |
 | 6 | DLQ + observability | ⬜ | DLQ inspector Lambda · CloudWatch dashboard · alarms (DLQ depth, P99, SF failures) | _pending_ |
 | 7 | Query API | ⬜ | API Gateway + query Lambda · `GET /sensors/{id}/readings?from=&to=` | _pending_ |
 | 8 | Datadog bridge | ⬜ | Datadog Lambda Extension layer wired (or design-doc-only if not deployed) | _pending_ |
@@ -219,7 +220,7 @@ backbone, deploy the processor Lambda with the ESM, accept live events.
 
 ---
 
-## Phase 4 — IoT Core + simulator 🚧
+## Phase 4 — IoT Core + simulator ✅
 
 **Goal.** Replace the manual `put-record` with the real device path —
 MQTT publish to IoT Core, Rules Engine routing to Kinesis and Step Functions.
@@ -236,6 +237,8 @@ MQTT publish to IoT Core, Rules Engine routing to Kinesis and Step Functions.
 - ✅ **P4.3** Simulate script — `scripts/simulate.ts` (CLI driver: `--count`, `--breach`, `--function`, `--region`); `npm run simulate -- --count 50`
 - ✅ **P4.4** Endpoint wiring — self-bootstrapping via `iot:DescribeEndpoint` custom resource at deploy time
 - ✅ CDK template assertions — `infra/__tests__/iot-stack.test.ts` locks rule SQL, partition key, role policies, simulator IAM scope
+- ✅ **P4.5** Deploy — `GridSensorIotStack` provisioned in account
+- ✅ **P4.6** Smoke test — `npm run simulate -- --count 50` published 50 events; all reached DynamoDB through IoT → Kinesis → ESM → processor → repository path; breach mode tested (5 events, no failures)
 
 **Acceptance criteria:**
 - `npx ts-node scripts/simulate.ts --count 50` results in 50 items in DynamoDB
@@ -246,20 +249,19 @@ MQTT publish to IoT Core, Rules Engine routing to Kinesis and Step Functions.
 
 ---
 
-## Phase 5 — Alert workflow ⬜
+## Phase 5 — Alert workflow 🚧
 
 **Goal.** Auditable, long-running alert escalation backed by Step Functions
 Standard.
 
 **Sub-phases & deliverables:**
-- ⬜ **P5.1** Alert handler — `src/handlers/alert-handler.ts`
-  - `NotifyOps` step — SNS notification with sensor reading + threshold context
-  - `EscalateToOnCall` path — same handler, `escalated: true` flag
-- ⬜ **P5.2** Alert workflow stack — `infra/lib/alert-workflow-stack.ts`
-  - Step Functions Standard: `NotifyOps` → `WaitForAck` (15 min) → `IsAcknowledged` → (`AlertResolved` | `EscalateToOnCall` → `AlertResolved`)
-  - Tracing enabled, 1 hour timeout
-- ⬜ **P5.3** IoT rule wiring — thread the state machine ARN back to `iot-stack.ts` for `ThresholdAlertRule`
-- ⬜ **P5.4** End-to-end alert test — simulator emits OOR reading → state machine executes → mocked ack via SDK resolves it
+- ✅ **P5.1** Alert handler — `src/handlers/alert-handler.ts` (single Lambda for both NotifyOps and EscalateToOnCall, differentiated by `escalated: true` flag; reuses validator + threshold modules; per-record metric dimensioning via `singleMetric()`)
+- ✅ **P5.2** Alert workflow stack — `infra/lib/alert-workflow-stack.ts` (Standard Workflow with `NotifyOps → WaitForAck → IsAcknowledged → AlertResolved | EscalateToOnCall → AlertResolved`; X-Ray active; ALL-level CloudWatch logging with execution data; 1-hour timeout; SNS topic with no subscriptions)
+- ✅ **P5.3** IoT rule wiring — `infra/lib/iot-stack.ts` extended with conditional `ThresholdAlertRule` when `alertStateMachine` prop provided; conditional `StepFunctionsStart` inline policy on the IoT Rules role
+- ✅ **P5.4** Cross-stack composition — `infra/bin/app.ts` instantiates `AlertWorkflowStack` before `IotStack`, passes state machine via constructor prop
+- ✅ CDK template assertions — `infra/__tests__/alert-workflow-stack.test.ts` locks Standard type, X-Ray, ALL-level logging, runtime, env vars, SNS publish grant
+- ⬜ **P5.5** Deploy — `npm run deploy` provisions the alert workflow stack and updates IoT stack with the new rule (user machine)
+- ⬜ **P5.6** Smoke test — `npm run simulate -- --count 5 --breach` triggers ≥1 Step Functions execution per breach reading (user machine)
 
 **Acceptance criteria:**
 - Triggering a threshold breach via simulator runs the full state machine
@@ -514,19 +516,31 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     silently leaks Kinesis streams under failed-deploy conditions.
   - **Cost teardown reminder:** ~$0.36/day Kinesis shard while deployed.
     `npm run destroy` at end of session.
-  - **Phase 4 (code shipped, deploy pending):** six pre-flight decisions
-    captured (no device certs / Fleet Provisioning is prod path,
-    per-Thing topic policy wildcards, endpoint via custom resource,
-    `ThresholdAlertRule` deferred to P5, Box-Muller Gaussian generator
-    with `--breach` mode, single combined IoT stack);
-    `infra/lib/iot-stack.ts` (endpoint discovery, Rules role with
-    inline Kinesis policy, AllTelemetryRule, simulator Lambda with
+  - **Phase 4 (✅ shipped end-to-end):** six pre-flight decisions
+    captured; `infra/lib/iot-stack.ts` (endpoint discovery, Rules role
+    with inline Kinesis policy, AllTelemetryRule, simulator Lambda with
     scoped iot:Publish); `src/handlers/simulator.ts` (Gaussian payload
-    generator, breach mode, EMF metrics); `scripts/simulate.ts`
-    (CLI driver via `LambdaClient.InvokeCommand`);
-    `infra/__tests__/iot-stack.test.ts` template assertions; learning
-    note `docs/learning/aws-iot-core.md` filled from real
-    implementation. **Open:** `npm install` (picks up
-    @aws-sdk/client-lambda); `npm test` (7 suites including new
-    iot-stack); `npm run synth`; `npm run deploy`; smoke test via
-    `npm run simulate -- --count 50`.
+    generator, breach mode, EMF metrics); `scripts/simulate.ts`;
+    `infra/__tests__/iot-stack.test.ts`; learning note
+    `docs/learning/aws-iot-core.md` and new
+    `docs/learning/synthetic-data-and-simulation.md` filled.
+    Deployed and smoke-tested: 50 events published in 1.5 s, all
+    landed in DynamoDB through IoT → Kinesis → ESM → processor.
+    `Duplicate write swallowed` log line verified P2's
+    `attribute_not_exists(pk)` path on a duplicate Kinesis put.
+  - **Phase 5 (code shipped, deploy pending):** six pre-flight
+    decisions captured (Standard Workflow, 15-min wait, default-false
+    ack, single Lambda for both paths, SNS topic without subscriptions,
+    cross-stack composition via constructor prop);
+    `src/handlers/alert-handler.ts` (single Lambda for NotifyOps and
+    EscalateToOnCall, reuses validator + threshold modules);
+    `infra/lib/alert-workflow-stack.ts` (Standard Workflow, X-Ray on,
+    ALL-level CloudWatch logging, configurable wait via
+    `-c ackWaitMinutes=N`); `infra/lib/iot-stack.ts` extended with
+    conditional `ThresholdAlertRule` and `StepFunctionsStart` inline
+    policy; `infra/__tests__/alert-workflow-stack.test.ts`; Step
+    Functions learning note filled from real implementation. **Open:**
+    `npm install` (picks up @aws-sdk/client-sns); `npm test` (8 suites
+    including new alert-workflow-stack); `npm run synth`;
+    `npm run deploy`; smoke test via `npm run simulate -- --count 5
+    --breach` and `aws stepfunctions list-executions ...`.

@@ -249,7 +249,89 @@ See `decisions/day-01-lib-foundation.md`.
 
 ---
 
-## Phase 5 — Alert workflow (pending)
+## Phase 5 — Alert workflow
+
+### Pre-flight decisions captured
+
+- [x] **Standard Workflow** (CLAUDE.md hard rule #10) — 90-day audit
+      retention, free Wait state, per-step retry.
+- [x] **Wait state: 15 minutes** — configurable via
+      `cdk deploy -c ackWaitMinutes=N`.
+- [x] **Acknowledgment: default-false (no ack mechanism in MVP).**
+      Workflow always escalates after the wait. Production extension
+      paths documented (task-token callback or DynamoDB ack table).
+- [x] **Escalation: same Lambda, different invocation payload.** P1 vs
+      P2 differentiated by `escalated: true` flag.
+- [x] **Single SNS topic, no subscriptions.** Subscriptions are an
+      operational decision per environment.
+- [x] **Cross-stack: AlertWorkflowStack → IotStack via constructor
+      prop.** IotStack accepts optional `alertStateMachine`; when
+      provided, adds `ThresholdAlertRule` and the `StepFunctionsStart`
+      inline policy.
+- See `decisions/phase-05-alert-workflow.md` for full rationale + cost lens.
+
+### Implemented
+
+- [x] **P5.1** `src/handlers/alert-handler.ts` — single Lambda for both
+      NotifyOps and EscalateToOnCall paths; reuses validator and
+      threshold modules; per-record metric dimensioning via
+      `singleMetric()`.
+- [x] **P5.2** `infra/lib/alert-workflow-stack.ts` — Standard Workflow
+      with `NotifyOps → WaitForAck → IsAcknowledged → AlertResolved |
+      EscalateToOnCall → AlertResolved`. X-Ray + ALL-level logging.
+- [x] **P5.3** IoT rule wiring — `infra/lib/iot-stack.ts` extended with
+      conditional `ThresholdAlertRule` when `alertStateMachine` prop is
+      provided. SQL filter mirrors `src/lib/threshold.ts` exactly.
+- [x] **P5.4** Cross-stack composition — `infra/bin/app.ts` instantiates
+      `AlertWorkflowStack` before `IotStack`, passes the state machine
+      via constructor prop.
+- [x] CDK template assertions — `infra/__tests__/alert-workflow-stack.test.ts`
+      locks Standard type, X-Ray, ALL-level logging, runtime, env vars,
+      SNS topic + grant.
+
+### To run on local machine
+
+- [ ] **P5** `npm install` — picks up `@aws-sdk/client-sns`.
+- [ ] **P5** `npm test` — 8 suites green (validator, threshold,
+      repository, processor, processing-stack, kinesis-stack, iot-stack,
+      alert-workflow-stack).
+- [ ] **P5** `npm run synth` — verify all five stacks render.
+- [ ] **P5** `npm run deploy` — provisions `GridSensorAlertWorkflowStack`
+      and updates `GridSensorIotStack` with the new `ThresholdAlertRule`.
+- [ ] **P5** Smoke test: trigger breach, verify Step Functions execution
+      starts (don't wait 15 minutes for completion):
+      ```bash
+      npm run simulate -- --count 5 --breach
+      sleep 5
+      ARN=$(aws cloudformation describe-stacks \
+        --stack-name GridSensorAlertWorkflowStack \
+        --query "Stacks[0].Outputs[?OutputKey=='AlertWorkflowArn'].OutputValue" \
+        --output text)
+      aws stepfunctions list-executions \
+        --state-machine-arn $ARN --max-results 10
+      ```
+      Expected: ≥1 execution per breach reading. SQL filter only fires
+      on voltage/frequency, so 5 breach events ≈ 2 executions
+      (since simulator picks readingType randomly).
+- [ ] **P5** Watch the alert handler logs to confirm SNS publish:
+      ```bash
+      aws logs tail /aws/lambda/grid-sensor-pipeline-alert-handler --since 5m
+      ```
+
+### Open review items
+
+- [ ] Verify the threshold predicate in `iot-stack.ts`'s SQL matches
+      `src/lib/threshold.ts` byte-for-byte. If you tune the thresholds
+      in either place, update both. Production hardening: generate
+      one from the other.
+- [ ] Add an SNS email subscription before any real demo — otherwise
+      alerts disappear into the void (only visible in the SNS console
+      / CloudWatch metric counts).
+- [ ] Consider lowering `ackWaitMinutes` to 1 for faster smoke
+      iteration during demo prep, then redeploy with the default 15
+      for the portfolio version.
+
+---
 
 ## Phase 6 — DLQ + observability (pending)
 

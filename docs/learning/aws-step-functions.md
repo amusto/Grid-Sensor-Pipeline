@@ -1,14 +1,14 @@
 # AWS Step Functions — Cheatsheet
 
-> **Status: STUB** — Phase 5 hasn't shipped yet. Pre-populated with the
-> conceptual scaffolding and resource links. Project-anchor sections are
-> marked TODO and get filled when `infra/lib/alert-workflow-stack.ts`
-> and `src/handlers/alert-handler.ts` land.
+> **Status: filled** — Phase 5 implemented. Project anchors below
+> reference the actual code.
 
-> **Where this will be used in the project:**
+> **Where this is used in the project:**
 > `infra/lib/alert-workflow-stack.ts` (Standard workflow definition),
-> `src/handlers/alert-handler.ts` (the Lambda task targets). Decision
-> rationale will live in `docs/decisions/phase-05-alert-workflow.md`.
+> `src/handlers/alert-handler.ts` (NotifyOps + EscalateToOnCall
+> Lambda), `infra/lib/iot-stack.ts` (`ThresholdAlertRule` that starts
+> executions). Decision rationale lives in
+> [`docs/decisions/phase-05-alert-workflow.md`](../decisions/phase-05-alert-workflow.md).
 
 ---
 
@@ -109,32 +109,85 @@ notification failure retries that step only, not the whole workflow.
 
 ---
 
-## TODO — Project-specific anchors (fill on Phase 5)
+## Project-specific anchors
 
-When the alert workflow lands, fill in:
+- **`infra/lib/alert-workflow-stack.ts`** — the state machine. Standard
+  workflow, X-Ray tracing on, ALL-level CloudWatch logging with
+  execution data, 1-hour timeout. Defined via CDK L2 constructs
+  (`sfn.StateMachine`, `tasks.LambdaInvoke`, `sfn.Wait`,
+  `sfn.Choice`, `sfn.Succeed`).
+- **`src/handlers/alert-handler.ts`** — single handler for both
+  `NotifyOps` (P2 initial notification) and `EscalateToOnCall` (P1
+  escalation). Differentiation by `escalated: true` flag on input.
+  Validates the source event with the existing Zod validator,
+  evaluates the threshold, publishes to SNS with a JSON body
+  including severity and threshold context.
+- **`infra/lib/iot-stack.ts`** — `ThresholdAlertRule` is added when
+  `props.alertStateMachine` is provided (Phase 5+). SQL filter mirrors
+  the `DEFAULT_THRESHOLDS` in `src/lib/threshold.ts` exactly. The
+  IoT Rules role gets a conditional `StepFunctionsStart` inline policy
+  granting `states:StartExecution` on the state machine ARN.
 
-- [ ] `infra/lib/alert-workflow-stack.ts` — the state machine
-      definition. Standard workflow type, tracingEnabled, 1-hour
-      timeout.
-- [ ] `src/handlers/alert-handler.ts` — Lambda for both `NotifyOps`
-      and `EscalateToOnCall` paths.
-- [ ] Workflow ASCII diagram in this note:
-      `NotifyOps → WaitForAck (15m) → IsAcknowledged → AlertResolved | EscalateToOnCall → AlertResolved`
-- [ ] IoT rule wiring — the `ThresholdAlertRule` from P4 needs the
-      state machine ARN to call `StartExecution`. Cross-stack
-      reference.
+### Workflow diagram
+
+```
+[ThresholdAlertRule fires]
+        │
+        ▼
+   ┌──────────┐
+   │ NotifyOps│ ──► alert-handler Lambda
+   └──────────┘     ──► SNS publish (P2 [<sensorId>])
+        │            returns { acknowledged: false }
+        ▼
+   ┌────────────┐
+   │ WaitForAck │  15 minutes (configurable: -c ackWaitMinutes=N)
+   └────────────┘
+        │
+        ▼
+   ┌─────────────────┐
+   │ IsAcknowledged? │ Choice on $.alert.acknowledged
+   └─────────────────┘
+        │              │
+   true │              │ false (always, in MVP)
+        ▼              ▼
+  AlertResolved  ┌──────────────────┐
+   (Succeed)     │ EscalateToOnCall │ ──► alert-handler Lambda
+                 └──────────────────┘     ──► SNS publish (P1 ESCALATED)
+                        │
+                        ▼
+                  AlertResolved
+                   (Succeed)
+```
+
+The MVP handler always returns `acknowledged: false` — see decision
+log P5 pre-flight 3 for the production extension path
+(task-token callback or DynamoDB ack table polling).
 
 ---
 
-## TODO — Tuning knobs (fill on Phase 5)
+## Tuning knobs in this project
 
-- [ ] Workflow timeout — currently 1 hour. Long enough for the 15-min
-      wait + retries, short enough to not pay for orphaned executions.
-- [ ] Per-step retry policy — exponential backoff parameters for the
-      `NotifyOps` step.
-- [ ] X-Ray tracing enabled — yes for the audit trail.
-- [ ] Logging level — `ALL` (every state transition) for the POC,
-      `ERROR` for production cost control.
+- **Workflow timeout:** 1 hour. Long enough for the 15-min wait +
+  retries; short enough that orphaned executions don't accrue cost.
+- **Wait state:** 15 minutes default; `cdk deploy -c ackWaitMinutes=1`
+  for fast iteration during development.
+- **X-Ray tracing:** enabled. Adds a Trace ID to every execution that
+  threads back through Lambda invocations and downstream AWS SDK
+  calls.
+- **Logging level:** `ALL` with `IncludeExecutionData: true`. Every
+  state transition logged with full input/output. Costly at scale;
+  appropriate for safety-critical workflows where audit is required.
+  Production-at-scale would tune to `ERROR` and rely on the 90-day
+  execution history for routine inspection.
+- **`resultSelector` + `resultPath` on NodifyOps:** pulls just
+  `acknowledged` out of the Lambda's response and stores at
+  `$.alert.acknowledged`. Keeps the Choice predicate readable
+  (`booleanEquals('$.alert.acknowledged', true)`) without surfacing
+  the full Lambda response shape (`$.Payload.acknowledged`).
+- **`sfn.JsonPath.entirePayload` on EscalateToOnCall:** the
+  escalation invocation passes the *entire* current state to the
+  handler under `context`, so the handler can re-render the original
+  notification with escalated severity.
 
 ---
 
@@ -188,24 +241,34 @@ is rounding-error.
 
 ---
 
-## TODO — CLI cheatsheet (fill during P5 smoke test)
+## CLI cheatsheet
 
 ```bash
-# Start an execution manually
-aws stepfunctions start-execution \
-  --state-machine-arn arn:aws:states:us-east-1:...:stateMachine:GridSensorAlertWorkflow \
-  --input '{"sensorId":"sensor-001",...}'
+# Trigger a breach (drives ThresholdAlertRule, starts the workflow)
+npm run simulate -- --count 5 --breach
 
-# List recent executions
+# List the most recent executions
+ARN=$(aws cloudformation describe-stacks \
+  --stack-name GridSensorAlertWorkflowStack \
+  --query "Stacks[0].Outputs[?OutputKey=='AlertWorkflowArn'].OutputValue" \
+  --output text)
 aws stepfunctions list-executions \
-  --state-machine-arn arn:aws:states:us-east-1:...:stateMachine:GridSensorAlertWorkflow \
+  --state-machine-arn $ARN \
   --max-results 10
 
-# Get execution history
-aws stepfunctions get-execution-history --execution-arn ...
+# Inspect one execution's history
+aws stepfunctions get-execution-history --execution-arn <execution-arn>
 
-# Send acknowledgment (for the manual ack flow during smoke test)
-aws stepfunctions send-task-success --task-token ... --output '{"acknowledged":true}'
+# Tail the alert handler's logs in real time
+aws logs tail /aws/lambda/grid-sensor-pipeline-alert-handler --since 5m --follow
+
+# Check the SNS topic for published messages count
+aws sns get-topic-attributes \
+  --topic-arn $(aws cloudformation describe-stacks \
+    --stack-name GridSensorAlertWorkflowStack \
+    --query "Stacks[0].Outputs[?OutputKey=='AlertTopicArn'].OutputValue" \
+    --output text) \
+  --query "Attributes.PublishedMessages"
 ```
 
 ---

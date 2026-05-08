@@ -23,10 +23,10 @@ picture, the linked AWS docs are the source of truth.
 | [`aws-kinesis.md`](aws-kinesis.md) | P3 | ✅ filled | Data Streams, Firehose, Lambda ESM tuning, partition keys, sequence numbers |
 | [`aws-iot-core.md`](aws-iot-core.md) | P4 | ✅ filled | MQTT topics, X.509 device auth, IoT Rules engine SQL, device shadows |
 | [`synthetic-data-and-simulation.md`](synthetic-data-and-simulation.md) | P4 | ✅ filled | Gaussian distributions, Box-Muller transform, organic vs adversarial generation, fault injection patterns |
-| [`aws-step-functions.md`](aws-step-functions.md) | P5 | 🚧 stub (concepts + resources) | Standard vs Express workflows, state types, error handling, JSONPath |
+| [`aws-step-functions.md`](aws-step-functions.md) | P5 | ✅ filled | Standard vs Express workflows, state types, error handling, JSONPath |
+| [`cdk-as-typed-model.md`](cdk-as-typed-model.md) | P5 | ✅ filled | CDK's defining property vs Terraform/CloudFormation; typed cross-stack contracts; pitfalls (predicate duplication, deploy ordering, L2 interface drift); CDK vs Pulumi vs CDKTF vs Terraform |
 | _(Lambda Powertools)_ | recurring | ⬜ planned | Logger, Tracer, Metrics, Idempotency utilities |
 | _(DynamoDB)_ | P3 | ⬜ planned | Single-table design, partition keys, GSIs, on-demand vs provisioned |
-| _(CDK)_ | P3 | ⬜ planned | Constructs, stacks, cross-stack refs, NodejsFunction bundling |
 
 **Stub vs filled.** A 🚧 stub note has the conceptual content,
 service-specific tuning knobs framework, pitfalls, cost levers, and

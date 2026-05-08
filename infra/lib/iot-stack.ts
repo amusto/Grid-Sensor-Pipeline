@@ -20,12 +20,28 @@ import * as kinesis from 'aws-cdk-lib/aws-kinesis';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import { Construct } from 'constructs';
 
 export interface IotStackProps extends cdk.StackProps {
   projectName: string;
   stream: kinesis.IStream;
+  /**
+   * Optional alert workflow state machine. When provided, IotStack
+   * adds a `ThresholdAlertRule` IoT rule that fires on out-of-range
+   * voltage/frequency readings and starts an execution of the state
+   * machine. Phase 5+ wiring; Phase 4 deploys without this prop and
+   * only the `AllTelemetryRule` is created.
+   */
+  alertStateMachine?: sfn.IStateMachine;
+  /**
+   * Name of the alert state machine. Required when `alertStateMachine`
+   * is set — the IoT rule's `stepFunctions` action needs the literal
+   * name (not the ARN), and newer aws-cdk-lib versions don't expose
+   * `stateMachineName` on the `IStateMachine` interface.
+   */
+  alertStateMachineName?: string;
 }
 
 export class IotStack extends cdk.Stack {
@@ -66,24 +82,36 @@ export class IotStack extends cdk.Stack {
     /**
      * IoT Rules engine role.
      *
-     * Inline policy in the constructor (per the P3 deploy lessons) so
-     * CFN can't race the policy attachment against rule creation. The
-     * rule needs PutRecord/PutRecords on the Kinesis data stream when
-     * it fires.
+     * Inline policies in the constructor (per the P3 deploy lessons)
+     * so CFN can't race the policy attachment against rule creation.
+     * Permissions are conditional on which rules this stack actually
+     * deploys: always Kinesis (for AllTelemetryRule); Step Functions
+     * StartExecution only if Phase 5's alert workflow is wired.
      */
+    const inlinePolicies: Record<string, iam.PolicyDocument> = {
+      KinesisWrite: new iam.PolicyDocument({
+        statements: [
+          new iam.PolicyStatement({
+            actions: ['kinesis:PutRecord', 'kinesis:PutRecords'],
+            resources: [props.stream.streamArn],
+          }),
+        ],
+      }),
+    };
+    if (props.alertStateMachine) {
+      inlinePolicies.StepFunctionsStart = new iam.PolicyDocument({
+        statements: [
+          new iam.PolicyStatement({
+            actions: ['states:StartExecution'],
+            resources: [props.alertStateMachine.stateMachineArn],
+          }),
+        ],
+      });
+    }
     const iotRulesRole = new iam.Role(this, 'IotRulesRole', {
       assumedBy: new iam.ServicePrincipal('iot.amazonaws.com'),
       description: 'IoT Rules engine role for routing telemetry to Kinesis',
-      inlinePolicies: {
-        KinesisWrite: new iam.PolicyDocument({
-          statements: [
-            new iam.PolicyStatement({
-              actions: ['kinesis:PutRecord', 'kinesis:PutRecords'],
-              resources: [props.stream.streamArn],
-            }),
-          ],
-        }),
-      },
+      inlinePolicies,
     });
 
     /**
@@ -115,6 +143,43 @@ export class IotStack extends cdk.Stack {
         ],
       },
     });
+
+    /**
+     * ThresholdAlertRule — out-of-range readings start the alert
+     * workflow. SQL filter mirrors `src/lib/threshold.ts` exactly;
+     * keep them in lockstep (predicate-duplication smell flagged in
+     * the P5 decision log).
+     *
+     * NERC standard: frequency 60 Hz +/- 0.5 Hz; voltage 120 V +/- 5%.
+     */
+    if (props.alertStateMachine && props.alertStateMachineName) {
+      const alertRuleName = `${props.projectName.replace(/-/g, '_')}_threshold_alert`;
+      new iot.CfnTopicRule(this, 'ThresholdAlertRule', {
+        ruleName: alertRuleName,
+        topicRulePayload: {
+          sql:
+            "SELECT *, topic(2) AS sensorId FROM 'sensors/+/telemetry' " +
+            "WHERE (readingType = 'frequency' AND (value < 59.5 OR value > 60.5)) " +
+            "OR (readingType = 'voltage' AND (value < 114 OR value > 126))",
+          awsIotSqlVersion: '2016-03-23',
+          ruleDisabled: false,
+          actions: [
+            {
+              stepFunctions: {
+                stateMachineName: props.alertStateMachineName,
+                roleArn: iotRulesRole.roleArn,
+              },
+            },
+          ],
+        },
+      });
+
+      new cdk.CfnOutput(this, 'ThresholdAlertRuleName', {
+        value: alertRuleName,
+        description: 'IoT Rule routing breach readings to alert workflow',
+        exportName: `${props.projectName}-threshold-alert-rule`,
+      });
+    }
 
     /**
      * Simulator Lambda log group — explicit per the P3 lesson.
