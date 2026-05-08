@@ -20,6 +20,6 @@
     "outDir": "./dist",
     "types": ["node", "jest"]
   },
-  "include": ["src/**/*", "infra/**/*"],
+  "include": ["src/**/*", "infra/**/*", "scripts/**/*"],
   "exclude": ["node_modules", "dist", "cdk.out", "coverage"]
 }

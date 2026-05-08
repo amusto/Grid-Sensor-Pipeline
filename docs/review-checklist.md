@@ -179,7 +179,75 @@ See `decisions/day-01-lib-foundation.md`.
 
 ---
 
-## Phase 4 — IoT Core stack + simulator (pending)
+## Phase 4 — IoT Core + simulator
+
+### Pre-flight decisions captured
+
+- [x] **No device certificates.** Simulator uses IAM-authorized Data
+      Plane SDK publishes; Fleet Provisioning is the documented prod path.
+- [x] **Topic policy: per-Thing wildcards.** `iot:Publish` scoped to
+      `arn:aws:iot:.../topic/sensors/*/telemetry` — same access pattern
+      a production device would receive.
+- [x] **IoT data endpoint via CDK custom resource** — self-bootstrapping;
+      no manual shell step to inject the endpoint into env vars.
+- [x] **`ThresholdAlertRule` deferred to Phase 5.** Avoids a placeholder
+      Step Functions ARN dependency.
+- [x] **Simulator payload: Box-Muller Gaussian, 5-sensor pool, optional
+      `--breach` flag** for guaranteed out-of-range voltage/frequency.
+- [x] **Single IoT stack** for Rules engine + simulator.
+- See `decisions/phase-04-iot-simulator.md` for full rationale + cost lens.
+
+### Implemented
+
+- [x] **P4.1** `infra/lib/iot-stack.ts` — endpoint discovery, Rules role
+      with inline Kinesis policy, `AllTelemetryRule`, simulator Lambda.
+- [x] **P4.2** `src/handlers/simulator.ts` — Gaussian payload generator,
+      breach mode, EMF metrics.
+- [x] **P4.3** `scripts/simulate.ts` — local CLI driver invoking the
+      simulator Lambda. Supports `--count`, `--breach`, `--function`,
+      `--region`. Run via `npm run simulate -- --count 50`.
+- [x] **P4.4** Endpoint wiring — `IOT_ENDPOINT` env injected from
+      `iot:DescribeEndpoint` custom resource at deploy time.
+- [x] CDK template assertions — `infra/__tests__/iot-stack.test.ts`
+      locks the rule SQL, partition key, role inline policy, simulator
+      env vars, and the `iot:Publish` ARN scope.
+
+### To run on local machine
+
+- [ ] **P4** `npm install` — picks up `@aws-sdk/client-lambda` for the script.
+- [ ] **P4** `npm test` — six suites green (validator, threshold,
+      repository, processor, processing-stack, kinesis-stack, iot-stack).
+- [ ] **P4** `npm run synth` — verify all four stacks render.
+- [ ] **P4** `npm run deploy` — provisions `GridSensorIotStack`
+      alongside the existing three.
+- [ ] **P4** Smoke test happy path:
+      ```bash
+      npm run simulate -- --count 50
+      sleep 10
+      aws dynamodb scan \
+        --table-name grid-sensor-pipeline-readings \
+        --limit 10 \
+        --query "Items[*].[pk.S, sk.S, value.N, readingType.S]" --output table
+      ```
+      Expected: ~50 rows in DynamoDB after a few seconds.
+- [ ] **P4** Smoke test breach path:
+      ```bash
+      npm run simulate -- --count 5 --breach
+      ```
+      Records should reach DynamoDB; Phase 5 alert workflow not yet wired,
+      so no Step Functions execution to verify (yet).
+
+### Open review items
+
+- [ ] Confirm the `topic(2) AS sensorId` SQL extracts the right segment
+      (the second `/`-delimited piece) at runtime — verify a stored
+      reading's `pk` matches the sensor ID in the original topic.
+- [ ] Decide on rule `errorAction` for Phase 6 — drop vs SQS for
+      Kinesis put failures.
+- [ ] Run `npm run lint` to make sure scripts/ + simulator / iot-stack
+      are clean (linting was deferred behind the scripts/ exemption).
+
+---
 
 ## Phase 5 — Alert workflow (pending)
 

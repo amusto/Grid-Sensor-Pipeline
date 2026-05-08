@@ -1,14 +1,13 @@
 # AWS IoT Core — Cheatsheet
 
-> **Status: STUB** — Phase 4 hasn't shipped yet. Pre-populated with the
-> conceptual scaffolding and resource links. Project-anchor sections are
-> marked TODO and get filled when `infra/lib/iot-stack.ts`,
-> `src/handlers/simulator.ts`, and `scripts/simulate.ts` land.
+> **Status: filled** — Phase 4 implemented. Project anchors below
+> reference the actual code.
 
-> **Where this will be used in the project:** `infra/lib/iot-stack.ts`
-> (Things, policy, IoT Rules), `src/handlers/simulator.ts` (publishes
-> synthetic telemetry), `scripts/simulate.ts` (driver). Decision rationale
-> will live in `docs/decisions/phase-04-iot-simulator.md`.
+> **Where this is used in the project:** `infra/lib/iot-stack.ts`
+> (IoT Rules + simulator Lambda), `src/handlers/simulator.ts`
+> (synthetic telemetry generator), `scripts/simulate.ts` (CLI driver).
+> Decision rationale lives in
+> [`docs/decisions/phase-04-iot-simulator.md`](../decisions/phase-04-iot-simulator.md).
 
 ---
 
@@ -83,31 +82,56 @@ the standard pattern for "set this device's threshold to X" workflows.
 
 ---
 
-## TODO — Project-specific anchors (fill on Phase 4)
+## Project-specific anchors
 
-When the IoT stack lands, fill in:
-
-- [ ] `infra/lib/iot-stack.ts` — the Thing type, policy, certificate
-      resource, and the two IoT Rules.
-- [ ] `src/handlers/simulator.ts` — Lambda using
-      `@aws-sdk/client-iot-data-plane` to publish synthetic readings.
-- [ ] `scripts/simulate.ts` — driver that invokes the simulator N times.
-- [ ] Cross-reference: confirm `ThresholdAlertRule` SQL matches
-      `src/lib/threshold.ts` exactly (the predicate lives in two places
-      — they must stay in sync).
+- **`infra/lib/iot-stack.ts`** — single stack containing:
+  - IoT data endpoint discovery via `AwsCustomResource` calling
+    `iot:DescribeEndpoint`.
+  - `AllTelemetryRule` — `SELECT *, topic(2) AS sensorId FROM
+    'sensors/+/telemetry'` → Kinesis (partition key `${sensorId}`).
+  - IoT Rules role with inline `kinesis:PutRecord`/`PutRecords` policy.
+  - Simulator Lambda (Node 20, 256 MB, X-Ray active) with
+    `iot:Publish` scoped to `sensors/*/telemetry`.
+- **`src/handlers/simulator.ts`** — synthetic telemetry generator:
+  - Box-Muller Gaussian distribution around realistic nominal values.
+  - 5-sensor default pool (`sensor-001` through `sensor-005`).
+  - `--breach` flag forces voltage to 110/130 V or frequency to
+    59.0/61.0 Hz to trigger the (Phase 5) alert workflow.
+  - EMF metrics: `SimulatedEventsPublished`, `SimulatedEventsFailed`,
+    `BreachEventsRequested`.
+- **`scripts/simulate.ts`** — CLI driver invoking the simulator Lambda
+  via `LambdaClient.InvokeCommand`. CLI args: `--count`, `--breach`,
+  `--function`, `--region`. Run via `npm run simulate -- --count 50`.
+- **Deliberate omissions** (documented in the decision log):
+  - No X.509 device certificates — the IAM-authorized Data Plane SDK
+    is sufficient for the POC simulator. Production would use Fleet
+    Provisioning.
+  - No `ThresholdAlertRule` — deferred to Phase 5 alongside the Step
+    Functions state machine.
+  - No IoT Thing type / Thing object — the simulator publishes
+    directly via the data plane and doesn't need device registration.
 
 ---
 
-## TODO — Tuning knobs (fill on Phase 4)
+## Tuning knobs in this project
 
-- [ ] Rule role permissions — minimum-privilege grants from
-      `iot.amazonaws.com` to Kinesis and Step Functions.
-- [ ] Certificate provisioning method — CDK custom resource for the
-      POC; fleet provisioning for production.
-- [ ] Topic policy granularity — per-Thing vs per-fleet.
-- [ ] Error action on the rule — what happens when the Kinesis put
-      fails. Default: drop. Better: error action sends to a separate
-      SQS queue.
+- **Rule role permissions** — `kinesis:PutRecord` + `kinesis:PutRecords`
+  on the data stream ARN. Minimum-privilege; assumed by
+  `iot.amazonaws.com`. Inline policies in the role constructor (per the
+  P3 deploy lessons, to avoid the policy-attachment race).
+- **Certificate provisioning** — none. POC uses IAM auth via the data
+  plane SDK. Production migration path documented in P4 decision log
+  (Fleet Provisioning).
+- **Topic policy granularity** — per-Thing wildcard pattern
+  (`arn:aws:iot:${region}:${account}:topic/sensors/*/telemetry`). Same
+  shape a real device's IoT Thing Policy would use with
+  `${iot:Connection.Thing.ThingName}` substitution.
+- **Error action on the rule** — none configured (defaults to drop on
+  Kinesis put failure). Production should add `errorAction` routing to
+  an SQS queue or a separate Firehose for forensics. Deferred until
+  Phase 6 (observability).
+- **`AwsIotSqlVersion`** — `2016-03-23`. Required for the `topic()`
+  function used to extract `sensorId` from the topic path.
 
 ---
 
@@ -158,22 +182,33 @@ For this project's dev volume, total IoT Core cost is rounding-error.
 
 ---
 
-## TODO — CLI cheatsheet (fill during P4 smoke test)
+## CLI cheatsheet
 
 ```bash
-# Get the data-plane endpoint
+# Get the data-plane endpoint (CDK does this automatically via the
+# AwsCustomResource in iot-stack.ts; this is for ad-hoc inspection)
 aws iot describe-endpoint --endpoint-type iot:Data-ATS
-
-# List Things
-aws iot list-things
 
 # List Rules
 aws iot list-topic-rules
 
-# Test a rule with a sample payload (in the console — no equivalent CLI)
+# Inspect the AllTelemetryRule
+aws iot get-topic-rule --rule-name gsp_test_all_telemetry  # or your project's name
 
-# Publish a test message via the data plane SDK (Node)
-# (see scripts/simulate.ts once it lands)
+# Trigger the simulator from the local machine (after deploy)
+npm run simulate -- --count 50
+
+# Force breach values to trigger the Phase 5 alert workflow
+npm run simulate -- --count 5 --breach
+
+# Watch simulator logs
+aws logs tail /aws/lambda/grid-sensor-pipeline-simulator --since 5m
+
+# Verify a record made it through the IoT → Kinesis → DynamoDB path
+aws dynamodb scan \
+  --table-name grid-sensor-pipeline-readings \
+  --limit 5 \
+  --query "Items[*].[pk.S, sk.S, value.N, readingType.S]" --output table
 ```
 
 ---

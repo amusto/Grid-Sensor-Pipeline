@@ -13,6 +13,7 @@ import * as cdk from 'aws-cdk-lib';
 import { StorageStack } from '../lib/storage-stack';
 import { KinesisStack } from '../lib/kinesis-stack';
 import { ProcessingStack } from '../lib/processing-stack';
+import { IotStack } from '../lib/iot-stack';
 
 const app = new cdk.App();
 
@@ -42,6 +43,13 @@ new ProcessingStack(app, 'GridSensorProcessingStack', {
   description: 'Processor Lambda + Kinesis ESM + DLQ',
   readingsTable: storage.readingsTable,
   idempotencyTable: storage.idempotencyTable,
+  stream: kinesis.stream,
+});
+
+new IotStack(app, 'GridSensorIotStack', {
+  env,
+  projectName,
+  description: 'IoT Rules engine + simulator Lambda',
   stream: kinesis.stream,
 });
 

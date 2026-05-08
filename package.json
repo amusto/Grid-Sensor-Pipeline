@@ -12,12 +12,13 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "lint": "eslint \"src/**/*.ts\" \"infra/**/*.ts\"",
+    "lint": "eslint \"src/**/*.ts\" \"infra/**/*.ts\" \"scripts/**/*.ts\"",
     "cdk": "cdk",
     "synth": "cdk synth",
     "diff": "cdk diff",
     "deploy": "cdk deploy --all",
-    "destroy": "cdk destroy --all"
+    "destroy": "cdk destroy --all",
+    "simulate": "ts-node scripts/simulate.ts"
   },
   "dependencies": {
     "@aws-lambda-powertools/idempotency": "^2",
@@ -27,6 +28,7 @@
     "@aws-sdk/client-dynamodb": "^3",
     "@aws-sdk/client-iot-data-plane": "^3",
     "@aws-sdk/client-kinesis": "^3",
+    "@aws-sdk/client-lambda": "^3",
     "@aws-sdk/lib-dynamodb": "^3",
     "zod": "^3"
   },

@@ -21,7 +21,7 @@ elapsed time depends on focus and velocity.
 ## Current state
 
 **Today:** Day 1 (2026-05-08)
-**Active phase:** Phase 4 — IoT Core + simulator (next up)
+**Active phase:** Phase 4 — IoT Core + simulator (code shipped; redeploy + smoke test pending on your machine)
 **Last shipped:** Phase 3 — Storage + processing CDK stacks (deployed, smoke-tested ✅)
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day.
 
@@ -32,8 +32,13 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-[█████████░░░░░░░░░░░] 46%   (19 / 41 sub-phases)
+[█████████░░░░░░░░░░░] 49%   (23 / 47 sub-phases)
 ```
+
+> **Note on the percentage drop.** Phase 10 (live demo dashboard) was
+> added Day 1 evening — adds 6 sub-phases to the denominator. Same
+> 23 sub-phases done; total scope grew from 41 to 47. Honest scope
+> accounting drops the % from 56% to 49%.
 
 ### By phase
 
@@ -42,12 +47,13 @@ elapsed time depends on focus and velocity.
 | 1 | Lib & test foundation        | `██████████` | 100% | 9/9 | ✅ |
 | 2 | Processor Lambda             | `██████████` | 100% | 4/4 | ✅ |
 | 3 | Storage + processing stacks  | `██████████` | 100% | 6/6 | ✅ |
-| 4 | IoT Core + simulator         | `░░░░░░░░░░` |   0% | 0/4 | ⏭️ |
+| 4 | IoT Core + simulator         | `██████████` | 100% | 4/4 | 🚧 |
 | 5 | Alert workflow               | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
 | 6 | DLQ + observability          | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
 | 7 | Query API                    | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
 | 8 | Datadog bridge               | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
 | 9 | Polish & teardown            | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
+| 10 | Live demo dashboard         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
 
 ### Gantt — phases on a timeline
 
@@ -64,14 +70,16 @@ gantt
     P2 Processor Lambda           :done,   p2, 2026-05-08, 1d
     section Infrastructure
     P3 Storage and processing     :done,   p3, 2026-05-08, 1d
-    P4 IoT Core and simulator     :active, p4, after p3, 1d
-    P5 Alert workflow             :        p5, after p4, 1d
+    P4 IoT Core and simulator     :done,   p4, 2026-05-08, 1d
+    P5 Alert workflow             :active, p5, after p4, 1d
     P6 DLQ and observability      :        p6, after p5, 1d
     section Application
     P7 Query API                  :        p7, after p6, 1d
     P8 Datadog bridge             :        p8, after p7, 1d
     section Polish
     P9 Polish and teardown        :        p9, after p8, 1d
+    section Demo
+    P10 Live demo dashboard       :        p10, after p9, 2d
 ```
 
 ### Phase × Requirements matrix
@@ -85,12 +93,13 @@ satisfies. This is the requirements-alignment view: progress isn't just
 | P1 | ✅ | #2 (no I/O in `lib/`), #3 (`threshold.ts` is pure) | #1 (no `any`), #2 (no `console.log`), #3 (no bare `catch`), #4 (no hardcoded names) | Foundation that subsequent invariants are enforced against |
 | P2 | ✅ | #1 (validate at I/O boundary), #4 (no business logic in handler), #5 (idempotency = Kinesis seq#), #7 (always `batchItemFailures`), #8 (metrics in `finally`) | #1, #2, #3, #4 (continued) | Six contract clauses honored in 195 lines |
 | P3 | ✅ | #6 (`attribute_not_exists(pk)` enforced at write time, **proven via "Duplicate write swallowed" log entry on duplicate Kinesis put**), #9 (`bisectBatchOnError: true` on ESM, locked by template assertions, **proven via poison-pill → DLQ smoke test**) | #4 (resource names from CDK context), #5 (no `--require-approval never` until stable) | All deployed and smoke-tested end-to-end |
-| P4 | ⬜ | — | — | IoT Rules SQL must mirror `threshold.ts` predicate (cross-reference) |
+| P4 | 🚧 | #1 (validation continues at I/O boundary — simulator emits well-formed events that the processor's validator accepts) | #4 (resource names from CDK context) | Code shipped; deploy + smoke test pending. `ThresholdAlertRule` SQL will mirror `threshold.ts` (P5 wires it) |
 | P5 | ⬜ | #10 (Step Functions Standard for alerting) | — | Auditable workflow gate |
 | P6 | ⬜ | — | — | Observability stack |
 | P7 | ⬜ | #1 (validate at the API boundary too) | — | Read-only IAM |
 | P8 | ⬜ | — | — | Pluggable observability via EMF |
 | P9 | ⬜ | — | #6 (`cdk destroy --all` after dev sessions) | Final teardown verification |
+| P10 | ⬜ | — | — | Demo surface only; reads existing metrics. Adds operational visibility for portfolio reviewers without changing pipeline contracts |
 
 **Legend.** Invariants and rules numbered per `CLAUDE.md`. The matrix is
 additive — once a clause is satisfied by an earlier phase, later phases
@@ -113,12 +122,13 @@ inherit and must not violate it.
 | 1 | Lib & test foundation | ✅ | Types · validator · threshold · repository · Powertools singletons · unit tests | [`docs/decisions/day-01-lib-foundation.md`](docs/decisions/day-01-lib-foundation.md) |
 | 2 | Processor Lambda | ✅ | Kinesis ESM handler with Powertools idempotency, EMF metrics, partial-failure isolation | [`docs/decisions/phase-02-processor.md`](docs/decisions/phase-02-processor.md) |
 | 3 | Storage + processing stacks | ✅ | CDK: Kinesis · DynamoDB · processor Lambda + ESM · DLQ — pipeline live | [`docs/decisions/phase-03-storage-processing.md`](docs/decisions/phase-03-storage-processing.md) |
-| 4 | IoT Core + simulator | ⬜ | IoT Rules: telemetry → Kinesis · threshold breaches → Step Functions · simulator Lambda | _pending_ |
+| 4 | IoT Core + simulator | 🚧 | IoT Rules: telemetry → Kinesis · simulator Lambda (threshold breaches deferred to P5) | [`docs/decisions/phase-04-iot-simulator.md`](docs/decisions/phase-04-iot-simulator.md) |
 | 5 | Alert workflow | ⬜ | Step Functions Standard: NotifyOps → Wait → IsAcknowledged → Escalate · alert-handler Lambda | _pending_ |
 | 6 | DLQ + observability | ⬜ | DLQ inspector Lambda · CloudWatch dashboard · alarms (DLQ depth, P99, SF failures) | _pending_ |
 | 7 | Query API | ⬜ | API Gateway + query Lambda · `GET /sensors/{id}/readings?from=&to=` | _pending_ |
 | 8 | Datadog bridge | ⬜ | Datadog Lambda Extension layer wired (or design-doc-only if not deployed) | _pending_ |
 | 9 | Polish & teardown | ⬜ | README revision · architecture diagram · cost analysis · `cdk destroy` verification | _pending_ |
+| 10 | Live demo dashboard | ⬜ | CloudWatch (CDK, quick win) · Grafana (depth + Aireon experience callback) · simulator trigger button · portfolio embed | _pending_ |
 
 ---
 
@@ -209,19 +219,23 @@ backbone, deploy the processor Lambda with the ESM, accept live events.
 
 ---
 
-## Phase 4 — IoT Core + simulator ⬜
+## Phase 4 — IoT Core + simulator 🚧
 
 **Goal.** Replace the manual `put-record` with the real device path —
 MQTT publish to IoT Core, Rules Engine routing to Kinesis and Step Functions.
 
 **Sub-phases & deliverables:**
-- ⬜ **P4.1** IoT stack — `infra/lib/iot-stack.ts`
-  - IoT Thing type + policy + test certificate (CDK custom resource)
+- ✅ **P4.1** IoT stack — `infra/lib/iot-stack.ts`
+  - IoT data endpoint discovery via `AwsCustomResource`
+  - IoT Rules role with inline `kinesis:PutRecord`/`PutRecords` policy
   - `AllTelemetryRule` — `SELECT *, topic(2) AS sensorId FROM 'sensors/+/telemetry'` → Kinesis (partition key `${sensorId}`)
-  - `ThresholdAlertRule` — SQL filter on out-of-range frequency/voltage → Step Functions `StartExecution`
-- ⬜ **P4.2** Simulator handler — `src/handlers/simulator.ts` (using `@aws-sdk/client-iot-data-plane`)
-- ⬜ **P4.3** Simulate script — `scripts/simulate.ts` (invoke simulator Lambda N times with synthetic payload distribution)
-- ⬜ **P4.4** Endpoint wiring — `IOT_ENDPOINT` env from `aws iot describe-endpoint`
+  - Simulator Lambda (Node 20, 256 MB, X-Ray active) with `iot:Publish` scoped to `sensors/*/telemetry`
+  - `ThresholdAlertRule` deferred to P5 (depends on Step Functions ARN)
+  - Device certificates intentionally omitted (Fleet Provisioning is the prod path; simulator uses IAM auth via Data Plane SDK)
+- ✅ **P4.2** Simulator handler — `src/handlers/simulator.ts` (Box-Muller Gaussian generator, 5-sensor pool, optional `--breach` mode, EMF metrics)
+- ✅ **P4.3** Simulate script — `scripts/simulate.ts` (CLI driver: `--count`, `--breach`, `--function`, `--region`); `npm run simulate -- --count 50`
+- ✅ **P4.4** Endpoint wiring — self-bootstrapping via `iot:DescribeEndpoint` custom resource at deploy time
+- ✅ CDK template assertions — `infra/__tests__/iot-stack.test.ts` locks rule SQL, partition key, role policies, simulator IAM scope
 
 **Acceptance criteria:**
 - `npx ts-node scripts/simulate.ts --count 50` results in 50 items in DynamoDB
@@ -347,6 +361,87 @@ zero-app-code Datadog forwarding.
 
 ---
 
+## Phase 10 — Live demo dashboard ⬜
+
+**Goal.** A single shareable URL that gives a portfolio reviewer the
+"oh, neat" moment in under 30 seconds — live operational metrics
+flowing in real time, with a button to trigger more events on demand.
+CloudWatch first for the quick win; Grafana to demonstrate the data-
+source flexibility used at Aireon.
+
+**Sub-phases & deliverables:**
+- ⬜ **P10.1** CloudWatch dashboard via CDK — `infra/lib/dashboard-stack.ts`:
+  - Per-sensor latest reading widget (Logs Insights query into
+    structured logs from the processor).
+  - Pipeline throughput timeline (`EventsProcessed` count by minute).
+  - Latency p50 / p95 / p99 from `ProcessingLatencyMs`.
+  - DLQ depth gauge (current queue length).
+  - Alert workflow execution count (will populate once Phase 5 ships).
+  - Dimensioned by `ReadingType` so reviewers can see voltage vs.
+    frequency vs. others side-by-side.
+- ⬜ **P10.2** Public sharing of the CloudWatch dashboard — flip the
+  "Share dashboard" toggle, capture the public URL, embed in the
+  portfolio README. Document the toggle in the decision log; CDK
+  doesn't natively manage this state (post-deploy CLI step).
+- ⬜ **P10.3** Grafana decision log + setup — three options compared
+  with cost lens:
+  - **Amazon Managed Grafana** (~$9/active-user/mo, fully managed,
+    easy SSO) — best if multiple reviewers will explore the dashboard
+    interactively.
+  - **Self-hosted Grafana on a t3.micro EC2** (~$8/mo + storage,
+    full control) — good for portfolio if you want it always-on with
+    a fixed cost.
+  - **Local Grafana via Docker, screenshots embedded** (free, less
+    interactive) — minimum cost, highest portfolio-permanence (can't
+    accidentally let it expire).
+  Decision goes in `docs/decisions/phase-10-demo-dashboard.md`.
+- ⬜ **P10.4** Grafana dashboard build — CloudWatch as primary data
+  source; optional Athena over the S3 cold archive for historical
+  panels; same data shape as the CloudWatch dashboard plus richer
+  per-sensor / per-zone visualizations Grafana supports natively.
+- ⬜ **P10.5** Simulator trigger button — Lambda Function URL
+  exposing a small static HTML page with a "Send 50 events" button
+  (and a `--breach` checkbox). Calls the simulator Lambda directly so
+  reviewers can drive new traffic without an AWS account or CLI.
+- ⬜ **P10.6** Portfolio integration — link/embed both surfaces from
+  the project README and the user's portfolio site. Optional: 30-second
+  screen-recording GIF inline so the demo works even if the live
+  surfaces are torn down.
+
+**Acceptance criteria:**
+- A reviewer opening the project README can reach a working dashboard
+  in two clicks.
+- Clicking "Send events" produces visible new data within ~10 seconds.
+- Both CloudWatch and Grafana surfaces render the same core metrics
+  consistently.
+- Cost stays under $15/month even in the most-on configuration
+  (Managed Grafana with active session) — and zero when torn down.
+
+**Dependencies:**
+- **Phase 6** (observability stack) provides the metrics both
+  dashboards consume. Phase 10 won't be useful until Phase 6 ships
+  the EMF metrics into CloudWatch.
+- **Phase 7** (query API) is optional but useful for any client-side
+  data fetches in a richer custom UI.
+- **Phase 4** (simulator) is what the trigger button calls — already
+  shipped.
+
+**Why CloudWatch before Grafana:**
+- **Quick wins.** CloudWatch dashboard via CDK is ~50 lines of
+  construct code; live data appears immediately after deploy. Grafana
+  setup involves either signing up for Managed Grafana, provisioning
+  EC2, or running Docker locally — non-trivial.
+- **Cost-aware.** First three CloudWatch dashboards are free per
+  region; the project will have one in P6 + one in P10 = both free.
+  Grafana costs accrue regardless of whether anyone's watching.
+- **Sequential storytelling for the interview.** "I started with
+  CloudWatch's native dashboards because they were the lowest-effort
+  way to validate the metric design, then layered Grafana on top
+  because the team I came from at Aireon used Grafana and the
+  flexibility matters at scale." Both decisions defensible.
+
+---
+
 ## Cross-cutting items
 
 These run alongside the phases, not as a phase of their own.
@@ -419,3 +514,19 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     silently leaks Kinesis streams under failed-deploy conditions.
   - **Cost teardown reminder:** ~$0.36/day Kinesis shard while deployed.
     `npm run destroy` at end of session.
+  - **Phase 4 (code shipped, deploy pending):** six pre-flight decisions
+    captured (no device certs / Fleet Provisioning is prod path,
+    per-Thing topic policy wildcards, endpoint via custom resource,
+    `ThresholdAlertRule` deferred to P5, Box-Muller Gaussian generator
+    with `--breach` mode, single combined IoT stack);
+    `infra/lib/iot-stack.ts` (endpoint discovery, Rules role with
+    inline Kinesis policy, AllTelemetryRule, simulator Lambda with
+    scoped iot:Publish); `src/handlers/simulator.ts` (Gaussian payload
+    generator, breach mode, EMF metrics); `scripts/simulate.ts`
+    (CLI driver via `LambdaClient.InvokeCommand`);
+    `infra/__tests__/iot-stack.test.ts` template assertions; learning
+    note `docs/learning/aws-iot-core.md` filled from real
+    implementation. **Open:** `npm install` (picks up
+    @aws-sdk/client-lambda); `npm test` (7 suites including new
+    iot-stack); `npm run synth`; `npm run deploy`; smoke test via
+    `npm run simulate -- --count 50`.

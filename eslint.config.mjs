@@ -25,4 +25,11 @@ export default tseslint.config(
       'no-console': 'off',
     },
   },
+  // CLI scripts: console.log is intentional user-facing output.
+  {
+    files: ['scripts/**/*.ts'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
 );

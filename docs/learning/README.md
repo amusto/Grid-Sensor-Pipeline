@@ -21,7 +21,8 @@ picture, the linked AWS docs are the source of truth.
 | Note | Phase introduced | Status | What it covers |
 |---|---|---|---|
 | [`aws-kinesis.md`](aws-kinesis.md) | P3 | ✅ filled | Data Streams, Firehose, Lambda ESM tuning, partition keys, sequence numbers |
-| [`aws-iot-core.md`](aws-iot-core.md) | P4 | 🚧 stub (concepts + resources) | MQTT topics, X.509 device auth, IoT Rules engine SQL, device shadows |
+| [`aws-iot-core.md`](aws-iot-core.md) | P4 | ✅ filled | MQTT topics, X.509 device auth, IoT Rules engine SQL, device shadows |
+| [`synthetic-data-and-simulation.md`](synthetic-data-and-simulation.md) | P4 | ✅ filled | Gaussian distributions, Box-Muller transform, organic vs adversarial generation, fault injection patterns |
 | [`aws-step-functions.md`](aws-step-functions.md) | P5 | 🚧 stub (concepts + resources) | Standard vs Express workflows, state types, error handling, JSONPath |
 | _(Lambda Powertools)_ | recurring | ⬜ planned | Logger, Tracer, Metrics, Idempotency utilities |
 | _(DynamoDB)_ | P3 | ⬜ planned | Single-table design, partition keys, GSIs, on-demand vs provisioned |
