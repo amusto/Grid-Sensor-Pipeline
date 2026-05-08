@@ -155,18 +155,16 @@ See `decisions/day-01-lib-foundation.md`.
 - [x] **CDK template assertions** — `infra/__tests__/processing-stack.test.ts`
       locks bisectBatchOnError, ReportBatchItemFailures, retry cap, DLQ wiring
 
-### To run on local machine
+### Run on local machine — completed
 
-- [ ] **P3.5** `npm install` (picks up new devDeps: aws-cdk, esbuild, ts-node, source-map-support)
-- [ ] **P3.5** `npm test` — all 5 suites green (validator, threshold, repository, processor, processing-stack)
-- [ ] **P3.5** `cdk bootstrap` — first-time per AWS account/region
-- [ ] **P3.5** `cdk synth` — verify all three stacks render
-- [ ] **P3.5** `cdk deploy --all` — provision storage → kinesis → processing
-- [ ] **P3.6** Smoke test (recipe in the user's response) — put a record on
-      Kinesis, observe in DynamoDB
-- [ ] **P3.6** Force a poison-pill record, observe DLQ delivery
-- [ ] **P3.6** Verify idempotent retry: put the same record twice, see one
-      DynamoDB item
+- [x] **P3.5** `npm install` — new devDeps installed
+- [x] **P3.5** `npm test` — all 5 suites green (validator, threshold, repository, processor, processing-stack)
+- [x] **P3.5** `cdk bootstrap` — `bootstrapped (no changes)` against existing bootstrap
+- [x] **P3.5** `cdk synth` — all three stacks render
+- [x] **P3.5** `cdk deploy --all` — three stacks live (with four in-flight fixes; see decision log addendum)
+- [x] **P3.6** Smoke test — Kinesis put-record → DynamoDB row verified
+- [x] **P3.6** Idempotency — duplicate Kinesis put → one row in DynamoDB; `Duplicate write swallowed (server-side dedup)` log line confirms `attribute_not_exists(pk)` path fired
+- [x] **P3.6** Poison pill → DLQ — invalid payload reaches DLQ after retries (depth ≥ 1)
 
 ### Open review items (post-deploy)
 

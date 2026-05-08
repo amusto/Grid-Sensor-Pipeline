@@ -213,3 +213,172 @@ Three durable patterns this phase encodes:
 3. **Stack boundaries follow lifecycle** — not technology category, not
    resource type. The boundary is "what fails together, deploys together,
    rolls back together."
+
+---
+
+## Deploy lessons — four real-world snags
+
+> Captured from the actual `cdk deploy --all` run on Day 1. Each is a
+> defensible interview talking point about CDK / CloudFormation gotchas
+> that aren't documented in the construct API but matter operationally.
+
+### 1. IAM rejects non-ASCII characters in role descriptions
+
+**What happened.** First deploy attempt failed at the `FirehoseRole`
+resource with:
+
+```
+Value at 'description' failed to satisfy constraint: Member must satisfy
+regular expression pattern: [	
+ -~¡-ÿ]*
+```
+
+The `description` field was set to `'Firehose role for Kinesis → S3
+archive'`. The em-dash arrow `→` (U+2192) sits outside IAM's accepted
+character classes (tab/CR/LF + printable ASCII + Latin-1 Supplement).
+
+**Fix.** Replaced `→` with `to` in the description string.
+
+**Pattern lesson.** IAM is stricter than most AWS services about Unicode
+in resource metadata. Defensive habit: keep CDK *string properties*
+(not JSDoc comments) ASCII-only — especially `description`, `tags`, and
+resource names. Comments are local-only and never reach AWS.
+
+---
+
+### 2. `Stream.grantRead()` doesn't include the legacy `kinesis:DescribeStream`
+
+**What happened.** Second deploy attempt failed at `ArchiveDeliveryStream`
+with:
+
+```
+Role ... is not authorized to perform: kinesis:DescribeStream on resource
+arn:aws:kinesis:us-east-1:.../grid-sensor-pipeline-telemetry
+```
+
+CDK's `Stream.grantRead(grantee)` grants `kinesis:DescribeStreamSummary`,
+`GetRecords`, `GetShardIterator`, `ListShards`, and `SubscribeToShard` —
+but NOT `kinesis:DescribeStream` (the older API). Kinesis Firehose
+specifically calls `DescribeStream` when configured with
+`KinesisStreamAsSource`, so the role hit a hard auth failure.
+
+**Fix.** Replaced the implicit `grantRead` with an explicit `inlinePolicies`
+declaration listing every action Firehose needs:
+
+```ts
+inlinePolicies: {
+  KinesisSourceAccess: new iam.PolicyDocument({
+    statements: [
+      new iam.PolicyStatement({
+        actions: [
+          'kinesis:DescribeStream',
+          'kinesis:DescribeStreamSummary',
+          'kinesis:GetRecords',
+          'kinesis:GetShardIterator',
+          'kinesis:ListShards',
+          'kinesis:SubscribeToShard',
+        ],
+        resources: [stream.streamArn],
+      }),
+    ],
+  }),
+  S3DestinationAccess: ...
+},
+```
+
+**Pattern lesson.** CDK's `grant*` methods are convenient but their
+action lists reflect *modern* SDK usage, not what every consuming service
+actually calls. When wiring service A as the source / sink for service B,
+verify service B's documented IAM requirements against what the CDK
+grant emits. The mismatch is most common with services that predate the
+modern SDK conventions (Firehose, Kinesis Producer Library, classic
+ELB).
+
+---
+
+### 3. `addToPolicy` creates a race against dependent-resource creation
+
+**What happened.** First fix attempt added `kinesis:DescribeStream` via
+`firehoseRole.addToPolicy(...)`. Same auth-failure error returned.
+
+**Diagnosis.** `addToPolicy` doesn't extend the role's resource
+definition — it creates a *separate* `AWS::IAM::Policy` resource attached
+to the role. CloudFormation's dependency graph only knows the Firehose
+DeliveryStream depends on the role itself, not on the policy attachment.
+CFN created them in parallel; Firehose attempted `DescribeStream` before
+the inline policy attached.
+
+**Fix.** Two-part: (a) move all permissions into the role constructor's
+`inlinePolicies` so they're inseparable from the role's CFN resource, and
+(b) add an explicit `deliveryStream.node.addDependency(firehoseRole)`
+just to be belt-and-suspenders.
+
+**Pattern lesson — adopt this as a default:**
+
+> When a CDK construct needs IAM permissions to call another resource's
+> API at create-time (Firehose reading from Kinesis, Lambda's first
+> invocation, Step Functions invoking a target), prefer `inlinePolicies`
+> in the role constructor over post-hoc `grant*` calls.
+
+`grant*` is fine for runtime-only permissions where the consuming
+resource doesn't need IAM to be ready at create-time. For create-time
+auth, inline policies are the correctness-preserving choice.
+
+---
+
+### 4. CFN rollback silently leaks Kinesis streams
+
+**What happened.** After each failed deploy attempt, CloudFormation
+attempted rollback. The S3 bucket, Firehose, and IAM role all rolled
+back cleanly. But the `AWS::Kinesis::Stream` resource (`grid-sensor-pipeline-telemetry`)
+remained `ACTIVE` *outside* CFN's tracking. The next deploy attempt
+failed early on "Resource of type `AWS::Kinesis::Stream` with identifier
+... already exists."
+
+**Recovery procedure** (used twice during the deploy run):
+
+```bash
+aws cloudformation delete-stack --stack-name GridSensorKinesisStack
+aws cloudformation wait stack-delete-complete --stack-name GridSensorKinesisStack
+
+aws kinesis delete-stream --stream-name grid-sensor-pipeline-telemetry
+aws kinesis wait stream-not-exists --stream-name grid-sensor-pipeline-telemetry
+```
+
+**Pattern lesson.** CloudFormation's rollback for `AWS::Kinesis::Stream`
+is historically flaky — the stream goes into `DELETING` status and
+either hangs or completes silently while the stack moves on. Two
+production hardenings worth knowing:
+
+1. **Streams in their own micro-stack.** Separating the stream into its
+   own CDK stack means a rollback of any other stack doesn't try to
+   reach back and delete the stream. Smaller blast radius.
+2. **`RemovalPolicy.RETAIN` on the stream.** Tells CFN explicitly "don't
+   delete this on rollback." Sidesteps the bug at the cost of manual
+   cleanup. POC posture chose `DESTROY` for cost cleanup; production
+   posture is `RETAIN` with explicit lifecycle scripts.
+
+---
+
+## The cross-cutting pattern across all four lessons
+
+These four snags share a common thread: **CDK's high-level constructs
+abstract over a lot of CFN ordering, IAM nuance, and service-specific
+quirks, but they don't abstract over everything.** When you wire a
+service principal that's older than the modern SDK conventions, or when
+you compose resources whose lifecycle isn't captured by the explicit
+dependency graph, you're back to reading service docs and CFN error
+messages.
+
+The Staff-level signal here isn't "I never make these mistakes." It's:
+
+- Read CFN errors carefully and quote them in commits / decision logs.
+- Recognize the pattern (auth failures at create-time = dependency
+  ordering issue; rollback orphans = a CFN bug class).
+- Reach for the right primitive (`inlinePolicies`, explicit
+  `addDependency`, micro-stacks, `RetainPolicy`) — not just retry the
+  same code.
+
+These lessons inform the design choices for Phase 4 (IoT Rules engine
+calls Kinesis), Phase 5 (Step Functions invokes Lambdas), and Phase 7
+(API Gateway invokes Lambda).

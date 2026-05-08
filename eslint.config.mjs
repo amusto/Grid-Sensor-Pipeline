@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'infra/**', 'coverage/**', 'cdk.out/**'],
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'cdk.out/**'],
   },
   ...tseslint.configs.recommended,
   {
@@ -16,8 +16,10 @@ export default tseslint.config(
       'no-console': 'error',
     },
   },
+  // Test files: relax `any` and `no-console` for jest mock ergonomics
+  // and Powertools log silencing.
   {
-    files: ['src/__tests__/**/*.ts'],
+    files: ['src/__tests__/**/*.ts', 'infra/__tests__/**/*.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       'no-console': 'off',

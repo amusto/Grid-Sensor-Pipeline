@@ -82,13 +82,63 @@ export class KinesisStack extends cdk.Stack {
 
     /**
      * Firehose role — read from Kinesis, write to S3.
+     *
+     * Permissions are declared as `inlinePolicies` in the constructor
+     * (rather than via `grantRead` + `addToPolicy` after the fact) for
+     * two reasons:
+     *
+     *   1. CDK's `Stream.grantRead()` does NOT include `kinesis:DescribeStream`
+     *      (the older API) — it grants only `DescribeStreamSummary`. Firehose
+     *      specifically calls `DescribeStream` when using a Kinesis stream
+     *      as its source, so the explicit list below is necessary.
+     *   2. Inline policies in the role constructor become part of the role's
+     *      `AWS::IAM::Role` resource definition. `addToPolicy` would create
+     *      a separate `AWS::IAM::Policy` resource — CFN can race the
+     *      Firehose DeliveryStream creation against the policy attachment,
+     *      causing intermittent auth failures during first deploy.
+     *
+     * The S3 bucket permissions follow the AWS-documented Firehose policy
+     * for an S3 destination.
      */
     const firehoseRole = new iam.Role(this, 'FirehoseRole', {
       assumedBy: new iam.ServicePrincipal('firehose.amazonaws.com'),
-      description: 'Firehose role for Kinesis → S3 archive',
+      description: 'Firehose role for Kinesis to S3 archive',
+      inlinePolicies: {
+        KinesisSourceAccess: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              actions: [
+                'kinesis:DescribeStream',
+                'kinesis:DescribeStreamSummary',
+                'kinesis:GetRecords',
+                'kinesis:GetShardIterator',
+                'kinesis:ListShards',
+                'kinesis:SubscribeToShard',
+              ],
+              resources: [stream.streamArn],
+            }),
+          ],
+        }),
+        S3DestinationAccess: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              actions: [
+                's3:AbortMultipartUpload',
+                's3:GetBucketLocation',
+                's3:GetObject',
+                's3:ListBucket',
+                's3:ListBucketMultipartUploads',
+                's3:PutObject',
+              ],
+              resources: [
+                archiveBucket.bucketArn,
+                `${archiveBucket.bucketArn}/*`,
+              ],
+            }),
+          ],
+        }),
+      },
     });
-    stream.grantRead(firehoseRole);
-    archiveBucket.grantWrite(firehoseRole);
 
     /**
      * Firehose: 5 min / 5 MB buffer is the industry default — balances S3
@@ -96,7 +146,7 @@ export class KinesisStack extends cdk.Stack {
      * reasonable for JSON output. Hive-style date prefix lets Athena/Glue
      * partition by year/month/day natively.
      */
-    new firehose.CfnDeliveryStream(this, 'ArchiveDeliveryStream', {
+    const deliveryStream = new firehose.CfnDeliveryStream(this, 'ArchiveDeliveryStream', {
       deliveryStreamName: `${props.projectName}-archive`,
       deliveryStreamType: 'KinesisStreamAsSource',
       kinesisStreamSourceConfiguration: {
@@ -117,6 +167,10 @@ export class KinesisStack extends cdk.Stack {
           'errors/!{firehose:error-output-type}/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/',
       },
     });
+
+    // Explicit dependency: Firehose creation must wait until the role
+    // (and its inline policies) is fully provisioned.
+    deliveryStream.node.addDependency(firehoseRole);
 
     this.stream = stream;
     this.archiveBucket = archiveBucket;
