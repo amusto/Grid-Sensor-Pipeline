@@ -78,11 +78,26 @@ const isConditionalCheckFailed = (err: unknown): boolean =>
 const decodeRecord = (record: KinesisStreamRecord): unknown =>
   JSON.parse(Buffer.from(record.kinesis.data, 'base64').toString('utf-8'));
 
+/**
+ * Powertools v2 quirk: `singleMetric()` instances flush their dimensions
+ * after the FIRST `addMetric` call. Subsequent `addMetric` calls on the
+ * same instance leak to the shared metrics singleton, losing the
+ * `ReadingType` dimension we set. Fix: one `singleMetric()` per metric.
+ *
+ * Discovered during P6.5 dashboard verification — `EventsProcessed` was
+ * showing per-ReadingType, `ProcessingLatencyMs` was showing without it.
+ * `aws cloudwatch list-metrics` confirmed only one stream of
+ * `ProcessingLatencyMs` (with `service` dim only) vs. five streams of
+ * `EventsProcessed` (with both dims).
+ */
 const emitProcessedRecord = (event: SensorEvent, latencyMs: number): void => {
-  const recordMetric = metrics.singleMetric();
-  recordMetric.addDimension('ReadingType', event.readingType);
-  recordMetric.addMetric('EventsProcessed', MetricUnit.Count, 1);
-  recordMetric.addMetric(
+  const eventsMetric = metrics.singleMetric();
+  eventsMetric.addDimension('ReadingType', event.readingType);
+  eventsMetric.addMetric('EventsProcessed', MetricUnit.Count, 1);
+
+  const latencyMetric = metrics.singleMetric();
+  latencyMetric.addDimension('ReadingType', event.readingType);
+  latencyMetric.addMetric(
     'ProcessingLatencyMs',
     MetricUnit.Milliseconds,
     latencyMs,

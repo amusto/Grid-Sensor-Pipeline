@@ -182,6 +182,63 @@ exploratory work.
 
 ---
 
+## Deploy lesson — Powertools `singleMetric()` flushes after first metric
+
+**Discovered during P6.5 dashboard verification.** The `Events processed`
+widget rendered correctly (dimensioned by `ReadingType`); the
+`Processing latency` widget showed *"No data available."* Diagnostic:
+
+```bash
+aws cloudwatch list-metrics --namespace GridSensorPipeline --output json \
+  | jq -r '.Metrics[] | "\(.MetricName) → \(.Dimensions | map("\(.Name)=\(.Value)") | join(", "))"'
+```
+
+Output revealed:
+- `EventsProcessed` → 5 streams, one per `ReadingType` ✅
+- `ProcessingLatencyMs` → 1 stream, **no `ReadingType`** ❌
+
+**Root cause.** Both metrics were emitted from the same `singleMetric()`
+instance:
+
+```ts
+const recordMetric = metrics.singleMetric();
+recordMetric.addDimension('ReadingType', event.readingType);
+recordMetric.addMetric('EventsProcessed', MetricUnit.Count, 1);          // ✅ has ReadingType
+recordMetric.addMetric('ProcessingLatencyMs', MetricUnit.Milliseconds, ...); // ❌ shared instance, no ReadingType
+```
+
+Powertools v2's `singleMetric()` flushes its custom dimensions after the
+*first* `addMetric` call. Subsequent `addMetric` calls on the same
+instance fall through to the shared `metrics` singleton, losing the
+custom dimensions.
+
+**Fix.** One `singleMetric()` per metric — verbose but correct:
+
+```ts
+const eventsMetric = metrics.singleMetric();
+eventsMetric.addDimension('ReadingType', event.readingType);
+eventsMetric.addMetric('EventsProcessed', MetricUnit.Count, 1);
+
+const latencyMetric = metrics.singleMetric();
+latencyMetric.addDimension('ReadingType', event.readingType);
+latencyMetric.addMetric('ProcessingLatencyMs', MetricUnit.Milliseconds, latencyMs);
+```
+
+**Pattern lesson.** When you need multiple metrics with the *same custom
+dimensions*, use one `singleMetric()` per metric. The 2× EMF entries are
+cheap (CloudWatch ingest is per-MB; structured logs are tiny).
+Alternative — emit metrics on the shared instance with `addDimensions()`
+once at the start of the invocation — works only if every metric in the
+invocation should carry that dimension set.
+
+**Where else to look.** The alert handler (P5) emits exactly *one*
+metric per `singleMetric()`, so it's not affected. The DLQ inspector
+and simulator emit through the shared metrics instance, so also fine.
+Audit when adding new handlers (P8 alert handler will use multiple
+metrics with `ReadingType`).
+
+---
+
 ## Cross-cutting framing for Phase 6
 
 Three durable patterns this phase encodes:
