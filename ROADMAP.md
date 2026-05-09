@@ -8,21 +8,16 @@ elapsed time depends on focus and velocity.
 
 ## Status legend
 
-| Symbol | Meaning |
-|---|---|
-| ✅ | Complete & verified |
-| 🚧 | In progress |
-| ⏭️ | Next up |
-| ⏸️ | Blocked / paused |
-| ⬜ | Not started |
+| ✅ Complete | 🚧 In progress | ⏭️ Next up | ⏸️ Blocked | ⬜ Not started | 🎯 Stretch goal |
+|---|---|---|---|---|---|
 
 ---
 
 ## Current state
 
-**Today:** Day 1 (2026-05-08)
-**Active phase:** Phase 6 — DLQ + observability (next up)
-**Last shipped:** Phase 5 — Alert workflow (deployed, 4-execution breach smoke test verified ✅)
+**Today:** Day 2 (2026-05-09)
+**Active phase:** Phase 6 — DLQ + observability (code shipped; deploy + chaos verification pending on user machine)
+**Last shipped:** Phase 5 — Alert workflow (deployed Day 1, 4-execution breach smoke test verified ✅)
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day.
 
 ---
@@ -32,14 +27,14 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-[████████████░░░░░░░░] 61%   (31 / 51 sub-phases)
+[█████████████░░░░░░░] 69%   (35 / 51 sub-phases)
 ```
 
-> Phase 5 closed end-to-end: 4 Step Functions executions started by
-> simulator breach mode, all reaching `Alert notified` in the alert
-> handler with bimodal breach distribution exactly as designed
-> (sensor-002/003, frequency 59.092 Hz, voltage 109.876/111.25/129.411 V).
-> Phase 6 (DLQ + observability) is the active phase.
+> Phase 6 code shipped: DLQ inspector handler, observability stack with
+> 3 alarms + dashboard, CDK template assertions. Deploy + chaos
+> verification pending. Total denominator unchanged: P6 already had
+> 4 implementation sub-phases; deploy + chaos add P6.5/P6.6 to match
+> the P3-P5 tracking shape (also unchanged at 6 each).
 
 ### By phase
 
@@ -50,11 +45,12 @@ elapsed time depends on focus and velocity.
 | 3 | Storage + processing stacks  | `██████████` | 100% | 6/6 | ✅ |
 | 4 | IoT Core + simulator         | `██████████` | 100% | 6/6 | ✅ |
 | 5 | Alert workflow               | `██████████` | 100% | 6/6 | ✅ |
-| 6 | DLQ + observability          | `░░░░░░░░░░` |   0% | 0/4 | ⏭️ |
+| 6 | DLQ + observability          | `███████░░░` |  67% | 4/6 | 🚧 |
 | 7 | Query API                    | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
 | 8 | Datadog bridge               | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
 | 9 | Polish & teardown            | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
 | 10 | Live demo dashboard         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
+| 11 | Architecture & live visualizations (stretch) | `░░░░░░░░░░` |   0% | 0/4 | 🎯 |
 
 ### Gantt — phases on a timeline
 
@@ -73,7 +69,7 @@ gantt
     P3 Storage and processing     :done,   p3, 2026-05-08, 1d
     P4 IoT Core and simulator     :done,   p4, 2026-05-08, 1d
     P5 Alert workflow             :done,   p5, 2026-05-08, 1d
-    P6 DLQ and observability      :active, p6, after p5, 1d
+    P6 DLQ and observability      :active, p6, 2026-05-09, 1d
     section Application
     P7 Query API                  :        p7, after p6, 1d
     P8 Datadog bridge             :        p8, after p7, 1d
@@ -96,7 +92,7 @@ satisfies. This is the requirements-alignment view: progress isn't just
 | P3 | ✅ | #6 (`attribute_not_exists(pk)` enforced at write time, **proven via "Duplicate write swallowed" log entry on duplicate Kinesis put**), #9 (`bisectBatchOnError: true` on ESM, locked by template assertions, **proven via poison-pill → DLQ smoke test**) | #4 (resource names from CDK context), #5 (no `--require-approval never` until stable) | All deployed and smoke-tested end-to-end |
 | P4 | 🚧 | #1 (validation continues at I/O boundary — simulator emits well-formed events that the processor's validator accepts) | #4 (resource names from CDK context) | Code shipped; deploy + smoke test pending. `ThresholdAlertRule` SQL will mirror `threshold.ts` (P5 wires it) |
 | P5 | ✅ | #10 (Step Functions Standard for alerting, locked by template assertions, **proven via 4 Step Functions executions started by simulator breach mode, all reaching `Alert notified` with bimodal threshold distribution**) | — | Same predicate as `lib/threshold.ts` mirrored into IoT Rules SQL — keep in lockstep |
-| P6 | ⬜ | — | — | Observability stack |
+| P6 | 🚧 | — | — | Code shipped: DLQ inspector + observability stack with 3 alarms (verbatim CLAUDE.md thresholds) + dashboard. Deploy + chaos verification pending |
 | P7 | ⬜ | #1 (validate at the API boundary too) | — | Read-only IAM |
 | P8 | ⬜ | — | — | Pluggable observability via EMF |
 | P9 | ⬜ | — | #6 (`cdk destroy --all` after dev sessions) | Final teardown verification |
@@ -125,11 +121,12 @@ inherit and must not violate it.
 | 3 | Storage + processing stacks | ✅ | CDK: Kinesis · DynamoDB · processor Lambda + ESM · DLQ — pipeline live | [`docs/decisions/phase-03-storage-processing.md`](docs/decisions/phase-03-storage-processing.md) |
 | 4 | IoT Core + simulator | ✅ | IoT Rules: telemetry → Kinesis · simulator Lambda (threshold breaches deferred to P5) | [`docs/decisions/phase-04-iot-simulator.md`](docs/decisions/phase-04-iot-simulator.md) |
 | 5 | Alert workflow | ✅ | Step Functions Standard: NotifyOps → Wait → IsAcknowledged → Escalate · alert-handler Lambda | [`docs/decisions/phase-05-alert-workflow.md`](docs/decisions/phase-05-alert-workflow.md) |
-| 6 | DLQ + observability | ⬜ | DLQ inspector Lambda · CloudWatch dashboard · alarms (DLQ depth, P99, SF failures) | _pending_ |
+| 6 | DLQ + observability | 🚧 | DLQ inspector Lambda · CloudWatch dashboard · alarms (DLQ depth, P99, SF failures) | [`docs/decisions/phase-06-dlq-observability.md`](docs/decisions/phase-06-dlq-observability.md) |
 | 7 | Query API | ⬜ | API Gateway + query Lambda · `GET /sensors/{id}/readings?from=&to=` | _pending_ |
 | 8 | Datadog bridge | ⬜ | Datadog Lambda Extension layer wired (or design-doc-only if not deployed) | _pending_ |
 | 9 | Polish & teardown | ⬜ | README revision · architecture diagram · cost analysis · `cdk destroy` verification | _pending_ |
 | 10 | Live demo dashboard | ⬜ | CloudWatch (CDK, quick win) · Grafana (depth + Aireon experience callback) · simulator trigger button · portfolio embed | _pending_ |
+| 11 | Architecture & live visualizations (stretch) | 🎯 | Static architecture diagram suite · X-Ray service map embed · animated data flow · live event stream viewer | _pending_ |
 
 ---
 
@@ -272,23 +269,32 @@ Standard.
 
 ---
 
-## Phase 6 — DLQ + observability ⏭️
+## Phase 6 — DLQ + observability 🚧
 
 **Goal.** Production-grade visibility — dashboards, alarms, DLQ inspection.
 
 **Sub-phases & deliverables:**
-- ⬜ **P6.1** DLQ inspector — `src/handlers/dlq-inspector.ts`
-  - SQS-triggered Lambda
-  - Structured log with original Kinesis sequence number + error context
-  - SNS alert
-  - Optional Kinesis replay (env-flagged)
-- ⬜ **P6.2** Observability stack — `infra/lib/observability-stack.ts`
-  - CloudWatch Dashboard: `EventsProcessed`, `ProcessingLatencyMs` (p50/p95/p99), `ValidationErrors`, `DlqMessagesReceived`, Step Functions execution count + failures
-- ⬜ **P6.3** Alarms — SNS-routed:
-  - `GridSensor-DLQ-Messages` — DLQ depth ≥ 1
-  - `GridSensor-P99-Latency` — p99 > 2000 ms for 3 min
-  - `AlertWorkflow-Failures` — Step Functions ExecutionsFailed ≥ 1
-- ⬜ **P6.4** Forced-failure verification — manually trigger each alarm path
+- ✅ **P6.1** DLQ inspector — `src/handlers/dlq-inspector.ts`
+  (SQS-triggered, parses Kinesis failure envelope, structured-logs
+  sequence range + reason, emits `DlqMessagesReceived`, publishes to
+  ops-alerts SNS; optional replay env-flagged off by default)
+- ✅ **P6.2** Observability stack — `infra/lib/observability-stack.ts`
+  (DLQ inspector Lambda + log group, ops-alerts SNS topic, single
+  dashboard with throughput / latency p50-p95-p99 / validation errors /
+  partial batch failures / duplicate writes / DLQ depth / alerts /
+  Step Functions execution counts)
+- ✅ **P6.3** Alarms — three with SNS actions:
+  `GridSensor-DLQ-Messages` (≥ 1, 1 period),
+  `GridSensor-P99-Latency` (> 2000 ms, 3 periods),
+  `AlertWorkflow-Failures` (≥ 1, 1 period)
+- ✅ **P6.4** DLQ inspector wired to `processing.dlq` via cross-stack
+  prop; CDK template assertions in
+  `infra/__tests__/observability-stack.test.ts`
+- ⬜ **P6.5** Deploy — `npm run deploy` provisions
+  `GridSensorObservabilityStack`; verify dashboard URL renders (user machine)
+- ⬜ **P6.6** Chaos verification — drive each alarm path:
+  poison-pill record → DLQ alarm; broken alert handler env → SF
+  failures alarm; sustained traffic → P99 latency alarm (user machine)
 
 **Acceptance criteria:**
 - Dashboard renders with non-empty data after a simulator run
@@ -444,6 +450,95 @@ source flexibility used at Aireon.
 
 ---
 
+## Phase 11 — Architecture & live visualizations 🎯
+
+**Status: stretch goal.** Out of MVP scope; valuable add-ons for
+portfolio depth and conference-talk material. Each sub-phase is
+independently shippable — you can do P11.1 alone (huge value, ~2h)
+without committing to P11.3 (animated GIF, ~1 day).
+
+**Goal.** Make the system *legible* at multiple zoom levels:
+- **Static architecture** for reviewers asking "what is this thing?"
+- **Live service map** for "show me it working right now"
+- **Animated data flow** for demos and recorded talks
+- **Live event stream viewer** for "let me see records flow through
+  without an AWS account"
+
+**What's already in place that this phase composes:**
+- **AWS X-Ray service map** — auto-generated from the tracing config
+  shipped in P2. Already a real-time architecture diagram with edge-
+  level latency. Just need to know it's there.
+- **CloudWatch dashboard** (P6) — metric-level system health.
+- **Step Functions execution graph** — auto-generated per execution.
+- **Mermaid Gantt** (this file) — phase timeline.
+
+**Sub-phases & deliverables:**
+
+- ⬜ **P11.1** Static architecture diagram suite — `docs/diagrams/`
+  - **Application diagram** — Mermaid C4 or flowchart of all 6 stacks
+    and their constructs (DynamoDB tables, Kinesis stream, Lambdas,
+    Step Functions, SNS topics)
+  - **Data flow diagram** — sequence diagram showing the IoT publish
+    → Kinesis → ESM → processor → DynamoDB path with the alert path
+    branching off
+  - **IAM relationship diagram** — Mermaid graph of which role can
+    do what to which resource (highlights least-privilege design)
+  - All embedded inline in README or linked from it; rendered by
+    GitHub natively, exportable to PNG via `mmdc` for portfolio sites
+- ⬜ **P11.2** X-Ray service map documentation — README screenshot +
+  link to X-Ray console URL; instructions for reviewers with AWS
+  access to view it live; explanation of what the map shows
+  (real-time latency overlay) so it's not just a screenshot
+- ⬜ **P11.3** Animated data flow — 30-second SVG animation or GIF
+  showing a single event traverse the system. Built from the static
+  data flow diagram with timed edge highlights. Embeddable in
+  portfolio sites that don't render Mermaid
+- ⬜ **P11.4** Live event stream viewer — Lambda Function URL hosting
+  a small static HTML page with a WebSocket connection (via API
+  Gateway WebSocket API) that renders events from Kinesis in real
+  time. Reviewers can watch events flow without an AWS account.
+  Most ambitious sub-phase; commit only if a portfolio reviewer would
+  benefit
+
+**Acceptance criteria:**
+- A reviewer opening the project README can understand the
+  architecture from diagrams alone, before reading any code.
+- A reviewer with AWS access can click through to the X-Ray service
+  map and see live data flow.
+- *Optional* — a reviewer without AWS access can see live data flow
+  via P11.4's hosted viewer.
+
+**Dependencies:**
+- P11.1 has no dependencies — could ship today.
+- P11.2 requires X-Ray to have been used recently (any simulator run
+  populates it for ~30 days).
+- P11.3 builds on P11.1's static diagrams.
+- P11.4 depends on P10's simulator trigger pattern (Lambda Function
+  URL) and adds API Gateway WebSocket API on top.
+
+**Why this is stretch, not core:**
+- The MVP (Phase 1-9) demonstrates engineering depth.
+- Phase 10's CloudWatch dashboard is "the live system in production"
+  for portfolio purposes.
+- Phase 11 is *audience expansion* — reaching reviewers who prefer
+  visual storytelling, conference talks, or zero-friction demos.
+- A reviewer who needs P11 has materially different evaluation
+  criteria than one who'd be sold by Phase 1-10. Worth shipping P1-10
+  first and seeing which audience matters.
+
+**Cost lens:**
+- P11.1 + P11.2 + P11.3 — $0 incremental cost. Mermaid and X-Ray are
+  free; animated GIF is one-time generation effort.
+- P11.4 — API Gateway WebSocket API is ~$1.00 per million messages +
+  $0.25 per million connection-minutes. At demo volumes, negligible.
+
+**The "we already have it" answer to "is the system observable in
+real time?":** Yes — the X-Ray service map and CloudWatch dashboard
+*are* the real-time application diagrams. P11 makes that visibility
+discoverable to audiences who don't know to look in those places.
+
+---
+
 ## Cross-cutting items
 
 These run alongside the phases, not as a phase of their own.
@@ -516,6 +611,32 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     silently leaks Kinesis streams under failed-deploy conditions.
   - **Cost teardown reminder:** ~$0.36/day Kinesis shard while deployed.
     `npm run destroy` at end of session.
+
+- **Day 2** (2026-05-09) — opened with the third recurrence of the
+  Kinesis stream rollback orphan (cleanup recipe from
+  `phase-03-storage-processing.md` Deploy lesson #4 applied);
+  redeploy succeeded. Added
+  `docs/learning/_design-patterns-index.md` — consolidated catalog of
+  every design pattern used in the project across categories (I/O
+  boundary, idempotency / failure handling, cost-aware engineering,
+  type system & IaC, simulation & testing, stack composition &
+  lifecycle), each linked back to where it's defined and applied.
+  **Phase 6 (code shipped, deploy pending):** six pre-flight decisions
+  captured (DLQ inspector log+alert+metric without auto-replay,
+  single observability stack, alarm thresholds verbatim from
+  CLAUDE.md, separate ops-alerts SNS topic, manual chaos
+  verification, dashboard reads metrics not LI queries);
+  `src/handlers/dlq-inspector.ts` (SQS-triggered, parses Kinesis
+  failure envelope, structured-logs sequence range + reason,
+  publishes to ops-alerts SNS, replay opt-in via env flag);
+  `infra/lib/observability-stack.ts` (DLQ inspector Lambda +
+  ops-alerts SNS topic + 3 alarms with SNS actions + single dashboard
+  with throughput, latency p50/p95/p99, validation errors, partial
+  batch failures, duplicate writes, DLQ depth, alerts, Step Functions
+  executions); `infra/__tests__/observability-stack.test.ts`. **Open:**
+  `npm test` (9 suites); `npm run synth`; `npm run deploy` provisions
+  `GridSensorObservabilityStack`; chaos verification recipe in
+  review checklist drives each alarm path.
   - **Phase 4 (✅ shipped end-to-end):** six pre-flight decisions
     captured; `infra/lib/iot-stack.ts` (endpoint discovery, Rules role
     with inline Kinesis policy, AllTelemetryRule, simulator Lambda with

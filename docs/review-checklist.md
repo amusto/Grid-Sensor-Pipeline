@@ -323,7 +323,95 @@ See `decisions/day-01-lib-foundation.md`.
 
 ---
 
-## Phase 6 — DLQ + observability (pending)
+## Phase 6 — DLQ + observability
+
+### Pre-flight decisions captured
+
+- [x] **DLQ inspector: log + alert + metric, NO auto-replay.** Replay is
+      env-flag-opt-in (`REPLAY_TO_KINESIS=true`); default off prevents
+      poison-pill retry storms.
+- [x] **Single observability stack, one dashboard URL.** Cross-stack
+      refs from ProcessingStack + AlertWorkflowStack via constructor props.
+- [x] **Alarm thresholds verbatim from CLAUDE.md.** DLQ ≥ 1, P99 > 2000ms
+      × 3 min, SF failures ≥ 1.
+- [x] **Separate `${projectName}-ops-alerts` SNS topic.** Different
+      audience from P5's grid-event topic.
+- [x] **Manual chaos verification for P6.6.** AWS FIS / continuous chaos
+      is Phase 11+ scope.
+- [x] **Dashboard reads CloudWatch metrics directly, not Logs Insights
+      queries.** EMF metrics already wired by P1-P5.
+- See `decisions/phase-06-dlq-observability.md` for full rationale + cost lens.
+
+### Implemented
+
+- [x] **P6.1** `src/handlers/dlq-inspector.ts` — SQS-triggered Lambda;
+      parses Kinesis failure envelope; structured-logs sequence range
+      and failure reason; emits `DlqMessagesReceived` metric;
+      publishes to ops-alerts SNS.
+- [x] **P6.2** `infra/lib/observability-stack.ts` — DLQ inspector
+      Lambda + log group, ops-alerts SNS topic, three CloudWatch
+      alarms with SNS actions, single dashboard with throughput +
+      latency + failure-mode + DLQ + alert + Step Functions widgets.
+- [x] **P6.3** Three alarms (`GridSensor-DLQ-Messages`,
+      `GridSensor-P99-Latency`, `AlertWorkflow-Failures`) all
+      publishing to the new ops-alerts topic.
+- [x] **P6.4** DLQ inspector wired to `processing.dlq` via
+      `SqsEventSource`; `processorDlq.grantConsumeMessages()` issued.
+- [x] CDK template assertions —
+      `infra/__tests__/observability-stack.test.ts` locks alarm
+      thresholds, evaluation periods, comparison operators, replay
+      default, dashboard count, ops-alerts topic name.
+
+### To run on local machine
+
+- [ ] **P6** `npm install` — no new deps
+- [ ] **P6** `npm test` — 9 suites green (validator, threshold,
+      repository, processor, processing-stack, kinesis-stack, iot-stack,
+      alert-workflow-stack, observability-stack)
+- [ ] **P6** `npm run synth` — all 6 stacks render
+- [ ] **P6** `npm run deploy` — provisions
+      `GridSensorObservabilityStack`; updates none of the others
+- [ ] **P6.5** Verify dashboard URL renders with live data:
+      ```bash
+      DASHBOARD=$(aws cloudformation describe-stacks \
+        --stack-name GridSensorObservabilityStack \
+        --query "Stacks[0].Outputs[?OutputKey=='DashboardUrl'].OutputValue" \
+        --output text)
+      echo $DASHBOARD
+      # Open in browser; should render all widgets with empty data initially
+      ```
+- [ ] **P6.5** Generate traffic to populate widgets:
+      ```bash
+      npm run simulate -- --count 100
+      sleep 60   # wait for EMF metrics to surface in CloudWatch
+      ```
+- [ ] **P6.6** Forced-failure verification — drive each alarm path:
+      - **DLQ alarm:** put a poison-pill record on Kinesis directly:
+        ```bash
+        aws kinesis put-record \
+          --stream-name grid-sensor-pipeline-telemetry \
+          --partition-key sensor-bad \
+          --data '{"this":"is","not":"valid"}' \
+          --cli-binary-format raw-in-base64-out
+        # After ~60s of ESM retries + bisection, alarm fires
+        ```
+      - **SF failures alarm:** force a failed alert workflow execution
+        via console: edit alert-handler env to break it, then trigger
+        a breach. (Reset after.)
+
+### Open review items
+
+- [ ] Confirm DLQ inspector log shows the parsed failure envelope
+      (sequence range + reason) when a real DLQ message arrives.
+- [ ] Confirm dashboard widgets render correctly with traffic flowing.
+- [ ] Decide whether to add an SNS email subscription on the ops-alerts
+      topic before any portfolio demo (otherwise alarms fire silently).
+- [ ] Phase 9 polish: revisit Kinesis stream rollback orphan pattern —
+      either move stream to its own micro-stack or set
+      `RemovalPolicy.RETAIN` explicitly to avoid the third-time orphan
+      we hit this morning.
+
+---
 
 ## Phase 7 — Query API (pending)
 
