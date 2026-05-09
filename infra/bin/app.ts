@@ -15,6 +15,7 @@ import { KinesisStack } from '../lib/kinesis-stack';
 import { ProcessingStack } from '../lib/processing-stack';
 import { IotStack } from '../lib/iot-stack';
 import { AlertWorkflowStack } from '../lib/alert-workflow-stack';
+import { ObservabilityStack } from '../lib/observability-stack';
 
 const app = new cdk.App();
 
@@ -38,7 +39,7 @@ const kinesis = new KinesisStack(app, 'GridSensorKinesisStack', {
   description: 'Kinesis Data Stream + Firehose archive to S3',
 });
 
-new ProcessingStack(app, 'GridSensorProcessingStack', {
+const processing = new ProcessingStack(app, 'GridSensorProcessingStack', {
   env,
   projectName,
   description: 'Processor Lambda + Kinesis ESM + DLQ',
@@ -60,6 +61,16 @@ new IotStack(app, 'GridSensorIotStack', {
   stream: kinesis.stream,
   alertStateMachine: alertWorkflow.stateMachine,
   alertStateMachineName: alertWorkflow.stateMachineName,
+});
+
+new ObservabilityStack(app, 'GridSensorObservabilityStack', {
+  env,
+  projectName,
+  description: 'DLQ inspector + CloudWatch dashboard + alarms',
+  processorDlq: processing.dlq,
+  processorFunction: processing.processor,
+  stream: kinesis.stream,
+  alertStateMachine: alertWorkflow.stateMachine,
 });
 
 cdk.Tags.of(app).add('project', projectName);
