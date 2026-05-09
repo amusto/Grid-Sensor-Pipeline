@@ -10,6 +10,7 @@ locally or debugging an issue.
 |---|---|
 | [`verification-cheatsheet.md`](verification-cheatsheet.md) | Any time you want to verify "is the pipeline alive?", "did the simulation flow through?", or "where in the pipeline did data stop?" |
 | [`recommended-tooling.md`](recommended-tooling.md) | When choosing or revisiting terminal / CLI / IDE tooling for this project's workflow patterns. Compares Warp / Ghostty / iTerm2-with-additions; lists companion tools (`atuin`, `aws-vault`, `fzf`, `starship`, `jq`, etc.). |
+| [`cost-tracking.md`](cost-tracking.md) | Daily — quick CLI cost check before/after dev sessions. Weekly — Cost Explorer review. Monthly — budget threshold review. Includes ad-hoc CLI queries, console surfaces, AWS Budgets setup (console + CDK options), and a per-service cost breakdown for this project. |
 
 ## What's NOT here (and where to find it)
 

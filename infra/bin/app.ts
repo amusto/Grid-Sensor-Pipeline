@@ -16,6 +16,7 @@ import { ProcessingStack } from '../lib/processing-stack';
 import { IotStack } from '../lib/iot-stack';
 import { AlertWorkflowStack } from '../lib/alert-workflow-stack';
 import { ObservabilityStack } from '../lib/observability-stack';
+import { QueryStack } from '../lib/query-stack';
 
 const app = new cdk.App();
 
@@ -71,6 +72,13 @@ new ObservabilityStack(app, 'GridSensorObservabilityStack', {
   processorFunction: processing.processor,
   stream: kinesis.stream,
   alertStateMachine: alertWorkflow.stateMachine,
+});
+
+new QueryStack(app, 'GridSensorQueryStack', {
+  env,
+  projectName,
+  description: 'API Gateway REST API + query Lambda over the readings table',
+  readingsTable: storage.readingsTable,
 });
 
 cdk.Tags.of(app).add('project', projectName);

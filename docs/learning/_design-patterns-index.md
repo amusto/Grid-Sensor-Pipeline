@@ -111,6 +111,9 @@ specific code.
 | **P4** | Organic vs adversarial generation; Fault injection; Bounded fixed-pool identifiers; Self-bootstrapping infrastructure |
 | **P5** | Codify invariants at the highest level the language can express; Single typed model spanning runtime + infra; Cross-stack composition via constructor props; Conditional infrastructure via optional typed props; Predicate parity across implementations; Document what's deferred |
 | **P6** | _(to come — likely: chaos verification patterns, alarm threshold tuning, dimensioned vs aggregated metrics)_ |
+| **P7** | _(API boundary patterns — separate Zod schemas per surface; read-only IAM grants as defense in depth)_ |
+| **P8** | _(to come — hybrid Step Functions + LangGraph pattern; AI as best-effort enhancement with deterministic fallback; MCP as platform thinking)_ |
+| **P9** | _(to come — idempotency at the case-tracker layer; partial-success tool execution; routing matrix as data with LLM as override)_ |
 
 ---
 

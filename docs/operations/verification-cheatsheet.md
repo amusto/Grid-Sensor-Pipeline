@@ -181,6 +181,41 @@ the CloudWatch dashboard's `IteratorAge` metric is faster than CLI.
 
 ---
 
+## Tier 4.5 — Query API endpoint (Phase 7+)
+
+```bash
+URL=$(aws cloudformation describe-stacks \
+  --stack-name GridSensorQueryStack \
+  --query "Stacks[0].Outputs[?OutputKey=='QueryApiUrl'].OutputValue" \
+  --output text)
+
+# Happy path
+curl -s "${URL}sensors/sensor-001/readings?limit=5" | jq
+
+# Time-window filter
+curl -s "${URL}sensors/sensor-001/readings?from=2026-05-08T00:00:00Z&to=2026-05-09T23:59:59Z&limit=20" | jq
+
+# Validation error path (bad sensorId format)
+curl -s -w "\n%{http_code}\n" "${URL}sensors/INVALID-FORMAT/readings"
+# Expected: 400 with Zod error details
+
+# Unknown sensor (valid format, no data)
+curl -s "${URL}sensors/sensor-999/readings" | jq
+# Expected: 200 with {sensorId: "sensor-999", count: 0, items: []}
+
+# Tail query Lambda logs while testing
+aws logs tail /aws/lambda/grid-sensor-pipeline-query --since 5m
+```
+
+API Gateway access logs are also useful when investigating 4xx/5xx
+spikes:
+
+```bash
+aws logs tail /aws/apigateway/grid-sensor-pipeline-query --since 15m
+```
+
+---
+
 ## Tier 5 — Step Functions executions (alert workflow)
 
 ```bash

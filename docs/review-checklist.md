@@ -413,7 +413,74 @@ See `decisions/day-01-lib-foundation.md`.
 
 ---
 
-## Phase 7 — Query API (pending)
+## Phase 7 — Query API
+
+### Pre-flight decisions captured
+
+- [x] **REST API over HTTP API.** Native API key/usage plan support
+      anticipates Phase 12 auth work; HTTP API drops these features.
+- [x] **No authentication (deferred to Phase 12).** API URLs not
+      enumerable; on-demand DynamoDB caps spike cost; Lambda
+      concurrency caps at 1000. Migration path documented.
+- [x] **Reuse `SensorRepository.queryReadings()`** — no DynamoDB
+      logic in handler; per CLAUDE.md invariant #4.
+- [x] **Two parallel Zod schemas** — one for events (`sensorEventSchema`),
+      one for query params (`queryParamsSchema`). Different I/O
+      boundaries, different shapes.
+- [x] **Read-only IAM grant** via `grantReadData` — defense in depth.
+- [x] **Permissive CORS for POC** — tightens in Phase 12 alongside auth.
+- See `decisions/phase-07-query-api.md` for full rationale + cost lens.
+
+### Implemented
+
+- [x] **P7.1** `src/handlers/query.ts` — Zod-validated path/query
+      params; calls `repo.queryReadings(...)`; returns 200 with
+      `{sensorId, count, items}`, 400 on validation error, 500 on
+      unexpected. EMF metrics: `QueriesServed`, `QueryLatencyMs`,
+      `QueryItemsReturned`, `QueryValidationErrors`, `QueryFailures`.
+- [x] **P7.2** `infra/lib/query-stack.ts` — REST API with
+      `GET /sensors/{sensorId}/readings`; X-Ray + access logging
+      enabled; Lambda integration (proxy mode); read-only IAM grant.
+- [x] **P7.3** `infra/__tests__/query-stack.test.ts` — locks REST API
+      type, route, Lambda runtime + env vars + tracing, IAM
+      read-only-ness (no PutItem/UpdateItem/DeleteItem in any policy),
+      stack output.
+- [x] **P7.4** `infra/bin/app.ts` — `QueryStack` instantiated with
+      `storage.readingsTable` cross-stack ref.
+
+### To run on local machine
+
+- [ ] **P7** `npm install` — no new deps
+- [ ] **P7** `npm test` — 10 suites green (validator, threshold,
+      repository, processor, processing-stack, kinesis-stack,
+      iot-stack, alert-workflow-stack, observability-stack, query-stack)
+- [ ] **P7** `npm run synth` — all 7 stacks render
+- [ ] **P7.5** `npm run deploy` — provisions `GridSensorQueryStack`
+- [ ] **P7.6** Smoke test:
+      ```bash
+      URL=$(aws cloudformation describe-stacks \
+        --stack-name GridSensorQueryStack \
+        --query "Stacks[0].Outputs[?OutputKey=='QueryApiUrl'].OutputValue" \
+        --output text)
+      curl -s "${URL}sensors/sensor-001/readings?limit=5" | jq
+      ```
+      Expected: 200 with `{sensorId: "sensor-001", count: N, items: [...]}`
+- [ ] **P7.6** Validation error path:
+      ```bash
+      curl -s -w "\n%{http_code}\n" "${URL}sensors/INVALID-FORMAT/readings"
+      ```
+      Expected: 400 with Zod error details
+
+### Open review items
+
+- [ ] Confirm `Access-Control-Allow-Origin: *` shows in response headers
+      (browser-side CORS preflight test).
+- [ ] Decide tightening path for CORS once Phase 10 demo dashboard's
+      hosting origin is known.
+- [ ] Phase 12 stretch: API key + usage plan for production posture;
+      rate limiting; Cognito user pool for the multi-tenant case.
+
+---
 
 ## Phase 8 — Datadog bridge (pending)
 
