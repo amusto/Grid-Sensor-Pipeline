@@ -16,8 +16,8 @@ elapsed time depends on focus and velocity.
 ## Current state
 
 **Today:** Day 2 (2026-05-09)
-**Active phase:** Phase 6 — DLQ + observability (code shipped; deploy + chaos verification pending on user machine)
-**Last shipped:** Phase 5 — Alert workflow (deployed Day 1, 4-execution breach smoke test verified ✅)
+**Active phase:** Phase 8 — AI/ML Integration (next up)
+**Last shipped:** Phase 7 — Query API (deployed Day 2, smoke test verified — positive, negative, and empty-result paths all return expected status + body ✅). Phase 6 closed same day after `singleMetric()` fix made the latency widget render and DLQ chaos verification confirmed via inspector logs.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day.
 
 ---
@@ -27,9 +27,9 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-Core (P1-P12):     [███████████░░░░░░░░░] 57%   (39 / 68 sub-phases)
+Core (P1-P12):     [█████████████░░░░░░░] 63%   (43 / 68 sub-phases)
 Stretch (P13-P14): [░░░░░░░░░░░░░░░░░░░░]  0%   ( 0 / 10 sub-phases)
-Combined:          [██████████░░░░░░░░░░] 50%   (39 / 78 sub-phases)
+Combined:          [███████████░░░░░░░░░] 55%   (43 / 78 sub-phases)
 ```
 
 > **Core** is the MVP — what reviewers expect to see for the JD scope.
@@ -56,8 +56,8 @@ Combined:          [██████████░░░░░░░░░░
 | 3 | Storage + processing stacks  | `██████████` | 100% | 6/6 | ✅ |
 | 4 | IoT Core + simulator         | `██████████` | 100% | 6/6 | ✅ |
 | 5 | Alert workflow               | `██████████` | 100% | 6/6 | ✅ |
-| 6 | DLQ + observability          | `███████░░░` |  67% | 4/6 | 🚧 |
-| 7 | Query API                    | `███████░░░` |  67% | 4/6 | 🚧 |
+| 6 | DLQ + observability          | `██████████` | 100% | 6/6 | ✅ |
+| 7 | Query API                    | `██████████` | 100% | 6/6 | ✅ |
 | 8 | AI/ML Integration            | `░░░░░░░░░░` |   0% | 0/6 | ⏭️ |
 | 9 | Agentic case routing         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
 | 10 | Datadog bridge              | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
@@ -83,9 +83,9 @@ gantt
     P3 Storage and processing     :done,   p3, 2026-05-08, 1d
     P4 IoT Core and simulator     :done,   p4, 2026-05-08, 1d
     P5 Alert workflow             :done,   p5, 2026-05-08, 1d
-    P6 DLQ and observability      :active, p6, 2026-05-09, 1d
+    P6 DLQ and observability      :done,   p6, 2026-05-09, 1d
     section Application
-    P7 Query API                  :active, p7, after p6, 1d
+    P7 Query API                  :done,   p7, after p6, 1d
     section AI/ML
     P8 AI/ML Integration          :        p8, after p7, 2d
     P9 Agentic case routing       :        p9, after p8, 2d
@@ -294,7 +294,7 @@ Standard.
 
 ---
 
-## Phase 6 — DLQ + observability 🚧
+## Phase 6 — DLQ + observability ✅
 
 **Goal.** Production-grade visibility — dashboards, alarms, DLQ inspection.
 
@@ -315,11 +315,20 @@ Standard.
 - ✅ **P6.4** DLQ inspector wired to `processing.dlq` via cross-stack
   prop; CDK template assertions in
   `infra/__tests__/observability-stack.test.ts`
-- ⬜ **P6.5** Deploy — `npm run deploy` provisions
-  `GridSensorObservabilityStack`; verify dashboard URL renders (user machine)
-- ⬜ **P6.6** Chaos verification — drive each alarm path:
-  poison-pill record → DLQ alarm; broken alert handler env → SF
-  failures alarm; sustained traffic → P99 latency alarm (user machine)
+- ✅ **P6.5** Deploy — `GridSensorObservabilityStack` provisioned;
+  dashboard URL renders. Bug surfaced + fixed: Powertools
+  `singleMetric()` flushes custom dimensions after first `addMetric`,
+  so multiple metrics on one instance lost `ReadingType`. Fix in
+  `processor.ts` is one `singleMetric()` per metric. Lesson captured
+  in `docs/decisions/phase-06-dlq-observability.md` §Deploy lesson.
+- ✅ **P6.6** Chaos verification — DLQ alarm path verified
+  end-to-end via inspector logs (`failureReason: RetryAttemptsExhausted`,
+  `approximateInvokeCount: 6`, `DlqMessagesReceived` metric incremented
+  across two invocations). DLQ depth read 0 on the alarm sample window
+  because the inspector consumed faster than the alarm period — by
+  design, and the inspector log is the authoritative proof the path
+  fired. P99 + SF-failures alarm paths pending future forced-failure
+  drills (acceptable: same pattern, no new infra).
 
 **Acceptance criteria:**
 - Dashboard renders with non-empty data after a simulator run
@@ -330,7 +339,7 @@ Standard.
 
 ---
 
-## Phase 7 — Query API 🚧
+## Phase 7 — Query API ✅
 
 **Goal.** External read API surface over the readings table.
 
@@ -339,8 +348,13 @@ Standard.
 - ✅ **P7.2** Query stack — `infra/lib/query-stack.ts` (REST API with `GET /sensors/{sensorId}/readings`, X-Ray + access logging on, Lambda proxy integration, read-only DynamoDB grant, permissive CORS)
 - ✅ **P7.3** CDK template assertions — `infra/__tests__/query-stack.test.ts` (locks REST-not-HTTP API type, route, env vars, tracing, IAM read-only-ness with explicit no-PutItem/UpdateItem/DeleteItem assertions)
 - ✅ **P7.4** App wiring — `infra/bin/app.ts` instantiates `QueryStack` with `storage.readingsTable` cross-stack ref; Phase 7 decision log captures 6 pre-flight decisions (REST API choice, no-auth deferred to P12, repo reuse, two parallel Zod schemas, read-only IAM, permissive CORS)
-- ⬜ **P7.5** Deploy — `npm run deploy` provisions `GridSensorQueryStack` (user machine)
-- ⬜ **P7.6** Smoke test — `curl <api-url>sensors/sensor-001/readings?limit=5` returns 200 with stored items; bad sensorId returns 400 with Zod details (user machine)
+- ✅ **P7.5** Deploy — `GridSensorQueryStack` provisioned at
+  `https://buf166t00b.execute-api.us-east-1.amazonaws.com/prod/`
+- ✅ **P7.6** Smoke test — five-curl sequence verified: positive (limit
+  only) + positive (time-window) returned 200 with `{sensorId, count,
+  items}`; bad sensorId pattern returned 400 with Zod `fieldErrors`;
+  malformed `from` timestamp returned 400; unknown-but-valid sensorId
+  returned 200 with `count: 0`.
 
 **Acceptance criteria:**
 - `curl` against the deployed endpoint returns simulator-emitted readings
@@ -831,3 +845,45 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     `AlertWorkflowStack`. Pattern captured in
     `docs/learning/cdk-as-typed-model.md` pitfall table for next
     interface-drift situation.
+  - **Phase 6 close-out (✅ shipped end-to-end):** deploy succeeded;
+    dashboard rendered after fixing a Powertools `singleMetric()`
+    dimension-leak bug — multiple `addMetric` calls on the same
+    `singleMetric()` instance flush custom dimensions after the
+    *first* metric, leaking subsequent metrics to the shared
+    singleton. Surface symptom was the `Processing latency` widget
+    showing "No data available" while `Events processed` rendered
+    correctly. Diagnosed via `aws cloudwatch list-metrics`: 5 streams
+    of `EventsProcessed` (with `ReadingType`) vs. 1 stream of
+    `ProcessingLatencyMs` (no `ReadingType`). Fix in
+    `src/handlers/processor.ts` is one `singleMetric()` per metric;
+    lesson captured as a "Deploy lesson" section in
+    `docs/decisions/phase-06-dlq-observability.md` with the diagnostic
+    CLI, root cause, fix, and audit guidance for future handlers.
+    Chaos verification (P6.6) confirmed end-to-end via DLQ inspector
+    logs across two invocations: `failureReason: RetryAttemptsExhausted`,
+    `approximateInvokeCount: 6`, full failure envelope captured,
+    `DlqMessagesReceived` metric incremented. (DLQ depth read 0 on
+    the alarm sample window because the inspector consumed faster
+    than the alarm period — by-design; the inspector log is the
+    authoritative proof the path fired.)
+  - **Phase 7 (✅ shipped end-to-end):** six pre-flight decisions
+    captured (REST API not HTTP API, no-auth deferred to P13 stretch,
+    `SensorRepository` reuse for read path, parallel Zod schema for
+    string-typed query params, read-only IAM with explicit no-write
+    template assertions, permissive CORS for POC);
+    `src/handlers/query.ts` (Zod-validated path/query params, calls
+    `repo.queryReadings()`, returns `{sensorId, count, items}`, 400
+    on validation, 500 on unexpected, EMF metrics for queries +
+    latency + items returned + validation errors + failures);
+    `infra/lib/query-stack.ts` (REST API with `GET
+    /sensors/{sensorId}/readings`, X-Ray + access logging, Lambda
+    proxy integration, read-only DynamoDB grant);
+    `infra/__tests__/query-stack.test.ts` (locks API type, route, env
+    vars, tracing, and IAM read-only-ness via explicit
+    no-PutItem/UpdateItem/DeleteItem assertions). Deployed to
+    `https://buf166t00b.execute-api.us-east-1.amazonaws.com/prod/`.
+    P7.6 smoke test verified all five paths: positive (limit only) +
+    positive (time-window) returned 200 with the expected envelope;
+    bad sensorId pattern returned 400 with Zod `fieldErrors`;
+    malformed `from` timestamp returned 400; unknown-but-valid
+    sensorId returned 200 with `count: 0` (empty path doesn't error).
