@@ -321,3 +321,29 @@ Ordered by what's most useful first.
 - When evaluating Express for a high-volume use case.
 - Before writing a workflow with more than ~5 states (the JSONPath
   shape complexity grows fast).
+
+---
+
+## Did I actually learn this? — self-test
+
+Without looking back at this note, can you:
+
+1. **State the Standard vs Express decision in one breath.** What's
+   the most important property each has that the other doesn't?
+2. **Explain why a Wait state is "free" but a Lambda that sleeps is
+   expensive.** What's the underlying mechanism?
+3. **Name at least four Step Functions state types and what each is
+   for.**
+4. **Explain the difference between `resultPath` and `outputPath`.**
+   Why did we use `resultPath: '$.alert'` in the project rather than
+   replacing the entire state?
+5. **Justify why the alert workflow's "always escalate after wait"
+   is honest engineering rather than incomplete.** What's the
+   production extension path, and why did we defer it?
+6. **Cite the audit-retention property and explain when it matters.**
+   For which kinds of workflows is 90-day retention table-stakes,
+   and for which is it overkill?
+
+If 4 trips you up, reread the "Tuning knobs in this project" section
+and the workflow diagram. JSONPath shape choices are the single most
+common source of bugs when wiring Step Functions to Lambdas.

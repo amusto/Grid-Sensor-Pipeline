@@ -265,3 +265,27 @@ Ordered by what's most useful first.
   retention.
 - Before any conversation about the streaming layer in an interview or
   design review.
+
+---
+
+## Did I actually learn this? — self-test
+
+Without looking back at this note, can you:
+
+1. **State what a partition key does in one breath.**
+2. **Name at least three of the ESM tuning knobs in our project and
+   what each controls.** (Hint: there are at least seven.)
+3. **Explain why `pk = sensorId` is the right choice over `pk = gridZone`
+   for this project.** Reference the load shape that drove the decision.
+4. **Cite the cost lens on shard count and retention.** Which knob has
+   linear cost growth past which threshold?
+5. **Explain the relationship between Kinesis retention and the
+   processor's idempotency TTL.** Why must they change in lockstep?
+6. **Name when you'd reach for Kafka over Kinesis** — what specific
+   constraint makes one preferable to the other?
+
+If you can answer all six fluently, you've internalized the streaming
+layer. If question 5 trips you up, reread the "Sequence number &
+idempotency" section — that's the one that ties the streaming layer
+to the consumer's correctness contract, and it's the most-asked
+follow-up in interviews about this kind of system.

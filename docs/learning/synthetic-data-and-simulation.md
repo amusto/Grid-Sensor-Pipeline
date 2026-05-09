@@ -351,6 +351,36 @@ ingress cost becomes meaningful and is worth tracking.
 
 ---
 
+## Did I actually learn this? — self-test
+
+Without looking back at this note, can you:
+
+1. **State the 68/95/99.7 rule in one breath.** What does each number
+   represent?
+2. **Explain why Gaussian is the natural default for sensor noise.**
+   What theorem makes it the right answer rather than "uniform
+   random"?
+3. **Name the three deliberate choices in breach mode** and why each
+   is intentional rather than incidental.
+4. **Justify why the simulator uses a fixed pool of 5 sensor IDs
+   instead of random UUIDs.** What test property does this preserve?
+5. **Explain the organic-vs-adversarial split in one sentence each.**
+   When would you reach for one over the other?
+6. **Cite an alternative distribution to Gaussian** and the kind of
+   data it's better for.
+7. **Walk through one round of Box-Muller** — given two uniform
+   numbers, what's the math, and why does it produce a Gaussian?
+
+If 7 trips you up, that's fine — Box-Muller's intuition takes time.
+The 3Blue1Brown video linked above is the single best resource. But
+you should be able to explain *why* a transformation from uniform to
+Gaussian is needed even if the specific math doesn't stick.
+
+If 4 trips you up, reread the "Pitfalls" section — the partition-key
+distribution test only works because of bounded sensor IDs.
+
+---
+
 ## Learning resources
 
 ### Probability and statistics

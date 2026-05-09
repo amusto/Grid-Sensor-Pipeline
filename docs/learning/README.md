@@ -11,15 +11,27 @@ Each note is structured the same way:
 4. **Pitfalls** — the four-or-so mistakes most newcomers make.
 5. **Cost levers** — what costs what, ordered by impact.
 6. **Learning resources** — official docs, hands-on workshops, deeper reads.
+7. **When to revisit this note** — the triggers that should bring you back.
+8. **Did I actually learn this? — self-test** — 5-7 questions you can
+   answer without looking at the note. Tests *understanding*, not
+   memorization. Last section in every filled note.
 
 These are working-engineer cheatsheets, not exhaustive references. The
 goal is fast recall, not comprehensive coverage. When you need the full
 picture, the linked AWS docs are the source of truth.
 
+**The self-test is the actual learning gate.** Reading a note tells you
+*what's covered*; the self-test tells you *what stuck*. Run it after the
+first read, again a week later, again a month later. Anything you trip
+up on is the section to revisit. If a note doesn't have a self-test
+yet, it's still a stub — the self-test is what marks it as fully
+filled.
+
 ## Index
 
 | Note | Phase introduced | Status | What it covers |
 |---|---|---|---|
+| [`_design-patterns-index.md`](_design-patterns-index.md) | recurring | ✅ living index | Consolidated catalog of every design pattern used in the project, organized by category, with anchors back to where each is defined and applied. **Read this periodically — patterns are durable across projects.** |
 | [`aws-kinesis.md`](aws-kinesis.md) | P3 | ✅ filled | Data Streams, Firehose, Lambda ESM tuning, partition keys, sequence numbers |
 | [`aws-iot-core.md`](aws-iot-core.md) | P4 | ✅ filled | MQTT topics, X.509 device auth, IoT Rules engine SQL, device shadows |
 | [`synthetic-data-and-simulation.md`](synthetic-data-and-simulation.md) | P4 | ✅ filled | Gaussian distributions, Box-Muller transform, organic vs adversarial generation, fault injection patterns |

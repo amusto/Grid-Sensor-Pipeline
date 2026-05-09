@@ -366,6 +366,42 @@ When you want to point at this pattern in the codebase:
 
 ---
 
+## Did I actually learn this? — self-test
+
+Without looking back at this note, can you:
+
+1. **State CDK's defining property vs Terraform/CloudFormation in one
+   breath.** Bonus: what's the underlying *general* pattern this is a
+   specific instance of?
+2. **Name three concrete things the typed model buys you** in this
+   project. Each should be a property the type system enforces that
+   would be a runtime error in a config-language IaC tool.
+3. **Name three limits of the typed model** — places where the
+   abstraction stops helping and you have to reach for explicit
+   prose, contract tests, or code generation.
+4. **Explain the difference between L1, L2, and L3 constructs.**
+   When is reaching for an L1 escape hatch the right call?
+5. **Cite three situations where you'd NOT reach for CDK.** What's
+   the alternative for each?
+6. **Walk through how a constructor prop becomes a CFN
+   export/import** at synth time. Why does the developer never see
+   the string-typed reference?
+7. **Explain why "interface stability is not a CDK guarantee"** —
+   give the specific example from this project where we hit it and
+   how we recovered.
+
+If 1 trips you up, that's the question to drill — it's the
+interview-pivotal one. The pattern *"codify invariants at the highest
+level the language can express them"* is the durable concept that
+generalizes beyond CDK to any typed-model abstraction (TypeScript
+itself, type-safe ORMs, schema-typed APIs, etc.).
+
+If 7 trips you up, reread the pitfalls table — the L2 interface
+property drift is the most subtle and unexpected limit of the typed
+model, and it's the one most likely to bite you on a CDK upgrade.
+
+---
+
 ## Learning resources
 
 ### Books

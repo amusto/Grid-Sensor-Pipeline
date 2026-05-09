@@ -255,3 +255,30 @@ Ordered by what's most useful first.
 - When cost reviews flag IoT Core spend — start with message volume
   and rule evaluation count.
 - Before writing fleet provisioning code (production hardening pass).
+
+---
+
+## Did I actually learn this? — self-test
+
+Without looking back at this note, can you:
+
+1. **Explain in one breath what the IoT Rules engine does and why it
+   matters that it's not a Lambda.** Specifically — why does its
+   non-Lambda-ness justify reaching for IoT Core over a custom HTTPS
+   endpoint?
+2. **Explain `topic(2) AS sensorId`** — what does it extract, why is
+   it the second segment specifically, and where does the resulting
+   value end up?
+3. **Name two reasons we omitted device certificates from the POC.**
+   What's the production migration path?
+4. **Cite the difference between `iot:Publish` and `iot:Connect`.**
+   Why does the simulator only need one of them?
+5. **Explain the predicate-duplication smell** — where does the same
+   threshold logic live now, and why is that a smell rather than a
+   feature?
+6. **Name the three top cost levers in IoT Core spend, ordered by
+   impact.**
+
+If 5 trips you up, reread the "Pitfalls" section. The predicate-
+duplication issue is the most architecturally significant concept in
+this note and the one most likely to surface in a code review.
