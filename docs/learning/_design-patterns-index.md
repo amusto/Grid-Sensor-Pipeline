@@ -71,6 +71,7 @@ specific code.
 | **Smallest correctness-safe TTL** | Pick the smallest TTL that satisfies correctness, not the most-conservative-feeling one | `docs/decisions/phase-02-processor.md` pre-flight 1 |
 | **Right-size by load shape, not intuition** | Billing mode, shard count, memory follows load shape — bursty vs steady-state | `docs/decisions/phase-03-storage-processing.md` pre-flight 1, 2, 4 |
 | **Correctness is cheaper than incident response** | Bias toward fail-loud; silent failure costs more than spurious noise | `docs/decisions/phase-02-processor.md`; `docs/_private/interview-prep.md` cost framing |
+| **Cost guardrails at three time horizons** | Per-call retry cap + per-window aggregate alarm + per-output schema bounds together bound LLM (or any usage-priced) cost across short, medium, and long horizons | `docs/learning/langchain-langgraph.md` "cost guardrails"; applied in `src/lib/llm-client.ts` + `infra/lib/observability-stack.ts` `BedrockTokens-Runaway` |
 
 ### Type system & IaC patterns
 
@@ -96,8 +97,10 @@ specific code.
 | Pattern | One-sentence definition | Where defined |
 |---|---|---|
 | **Stack boundaries follow lifecycle** | Not technology category — what fails together, deploys together, rolls back together | `docs/decisions/phase-03-storage-processing.md` pre-flight 7 |
-| **Document what's deferred, don't pretend it's done** | When a feature is intentionally out of scope, say so explicitly rather than building a placeholder | `docs/decisions/phase-05-alert-workflow.md` pre-flight 3 (default-false ack) |
+| **Document what's deferred, don't pretend it's done** | When a feature is intentionally out of scope, say so explicitly rather than building a placeholder | `docs/decisions/phase-05-alert-workflow.md` pre-flight 3 (default-false ack); `src/handlers/dlq-inspector.ts` REPLAY_TO_KINESIS stub |
 | **Self-bootstrapping infrastructure** | No manual shell steps to wire account-specific values; discovery happens at deploy via custom resources | `docs/decisions/phase-04-iot-simulator.md` pre-flight 3 |
+| **Composition over replacement at the right layer** | When two technologies cover similar ground at different abstraction levels, compose rather than choose — each at the layer where it's strongest | `docs/decisions/phase-08-ai-ml-integration.md` pre-flight 1 (Step Functions outer + LangGraph inner); `docs/learning/langchain-langgraph.md` |
+| **Recurring-failure promotion** | When the same defect class hits N times, promote the documentation from "captured edge case" to "recurring class of failure" with a recurrence log + automated detection | `docs/decisions/phase-03-storage-processing.md` Deploy lesson #4 (Kinesis CFN orphan, 4× as of Day 3); `scripts/post-destroy-check.sh` |
 
 ---
 

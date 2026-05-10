@@ -15,10 +15,10 @@ elapsed time depends on focus and velocity.
 
 ## Current state
 
-**Today:** Day 2 (2026-05-09)
-**Active phase:** Phase 8 — AI/ML Integration (next up)
-**Last shipped:** Phase 7 — Query API (deployed Day 2, smoke test verified — positive, negative, and empty-result paths all return expected status + body ✅). Phase 6 closed same day after `singleMetric()` fix made the latency widget render and DLQ chaos verification confirmed via inspector logs.
-**Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day.
+**Today:** Day 3 (2026-05-10)
+**Active phase:** Phase 8 — AI/ML Integration (in progress)
+**Last shipped:** P8.1 (Bedrock IAM grant + Sonnet 4.6 inference profile, deploy-verified Day 3 morning) and P8.2 (LangChain client wrapper + runaway-cost alarm, unit-tested + synth-verified). P8.3 (severity classifier node) is code-complete; verification trio (`npm run build`, `npm test -- severity-classifier`, `npx cdk synth`) pending on user machine.
+**Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
 ---
 
@@ -27,9 +27,9 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-Core (P1-P12):     [█████████████░░░░░░░] 63%   (43 / 68 sub-phases)
+Core (P1-P12):     [█████████████░░░░░░░] 66%   (45 / 68 sub-phases)
 Stretch (P13-P14): [░░░░░░░░░░░░░░░░░░░░]  0%   ( 0 / 10 sub-phases)
-Combined:          [███████████░░░░░░░░░] 55%   (43 / 78 sub-phases)
+Combined:          [████████████░░░░░░░░] 58%   (45 / 78 sub-phases)
 ```
 
 > **Core** is the MVP — what reviewers expect to see for the JD scope.
@@ -58,7 +58,7 @@ Combined:          [███████████░░░░░░░░░
 | 5 | Alert workflow               | `██████████` | 100% | 6/6 | ✅ |
 | 6 | DLQ + observability          | `██████████` | 100% | 6/6 | ✅ |
 | 7 | Query API                    | `██████████` | 100% | 6/6 | ✅ |
-| 8 | AI/ML Integration            | `░░░░░░░░░░` |   0% | 0/6 | ⏭️ |
+| 8 | AI/ML Integration            | `██████░░░░` |  33% | 2/6 | 🚧 |
 | 9 | Agentic case routing         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
 | 10 | Datadog bridge              | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
 | 11 | Polish & teardown           | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
@@ -365,7 +365,7 @@ Standard.
 
 ---
 
-## Phase 8 — AI/ML Integration ⏭️
+## Phase 8 — AI/ML Integration 🚧
 
 **Goal.** Bedrock-powered alert narratives, LangChain-templated prompts,
 LangGraph-orchestrated agentic flow inside the alert handler, and an
@@ -400,30 +400,60 @@ existing `NotifyOps` task — for agentic decisioning.
 
 **Sub-phases & deliverables (implementation order; de-risk-first):**
 
-- ⬜ **P8.1** Bedrock model access + IAM scope — verify access to
-  Claude Sonnet 4.6 via the **US cross-region inference profile**
-  `us.anthropic.claude-sonnet-4-6` (current Sonnet on Bedrock ships
-  behind inference profiles, not bare model IDs); add resource-scoped
-  `bedrock:InvokeModel` grant to the alert handler's IAM role in
-  `alert-workflow-stack.ts` covering BOTH the profile ARN and the
-  underlying foundation-model ARN (no wildcards). Synth + diff
-  verified; deploy deferred to P8.5. AWS retired the Model Access
-  page mid-2025 — first-time Anthropic invocation triggers an inline
-  use-case form rather than a multi-day approval queue.
-- ⬜ **P8.2** Client wiring + first unit test + runaway-cost alarm —
-  `src/lib/llm-client.ts` wraps Bedrock via LangChain
-  (`BedrockChat` + `StructuredOutputParser`); cap LangChain max
-  retries at 1-2 to prevent parse-failure spirals; one unit test
-  proving end-to-end "stub event in → typed Zod output." Add
-  `BedrockTokensUsed` EMF metric (input + output tokens summed per
-  invocation) and a `BedrockTokens-Runaway` CloudWatch alarm in
-  `observability-stack.ts` (> 1M tokens in 1 hour → ops-alerts SNS).
-  De-risks 80% of downstream nodes — every later node uses this same
-  plumbing.
-- ⬜ **P8.3** Severity classifier node — first LangGraph node. Inputs:
-  breach event + recent context. Output: Zod-typed
-  `{severity: P0|P1|P2|P3, confidence, reasoning}`. Standalone unit
-  test with prompt fixture matrix.
+- ✅ **P8.1** Bedrock model access + IAM scope — Sonnet 4.6 verified
+  invokable through `us.anthropic.claude-sonnet-4-6` (US cross-region
+  inference profile); resource-scoped `bedrock:InvokeModel` grant on
+  the alert handler's IAM role covering BOTH the profile ARN and the
+  underlying foundation-model ARN (no wildcards) — see
+  `infra/lib/alert-workflow-stack.ts` and the matching positive +
+  defense-in-depth no-wildcard assertions in
+  `infra/__tests__/alert-workflow-stack.test.ts`. Deploy verified
+  Day 3 morning; live IAM document confirmed via `aws iam
+  get-role-policy`. Two real-world findings captured in the decision
+  doc: (1) AWS retired the Model Access page mid-2025 — first-time
+  Anthropic invocation triggers an inline use-case form, not a
+  multi-day approval queue; (2) current-generation Anthropic models
+  on Bedrock ship behind cross-region inference profiles only —
+  invoking the bare foundation-model ID returns
+  `ValidationException: ... isn't supported with on-demand throughput`,
+  which is how we discovered the migration pattern.
+- ✅ **P8.2** Client wiring + first unit test + runaway-cost alarm —
+  `src/lib/llm-client.ts` wraps Bedrock via LangChain's
+  `ChatBedrockConverse` (Converse API; abstracts away model-family
+  request body formats — no `anthropic_version` wrapper needed).
+  `invokeStructured(schema, messages)` returns Zod-typed parsed output.
+  `maxRetries: 1` caps parse-failure spirals (cost guardrail). Emits
+  `BedrockInvocations` (count), `BedrockLatencyMs`, `BedrockTokensUsed`
+  (sum of input + output, defensively extracted across LangChain field
+  variations `usage_metadata` vs `response_metadata.usage`), and
+  `BedrockFallback` (on error). 8 unit tests cover happy path, both
+  token-extraction fallbacks, missing-usage edge case, retry cap,
+  model+region passing, error path, and lazy singleton behavior.
+  CDK side: `BedrockTokens-Runaway` CloudWatch alarm in
+  `infra/lib/observability-stack.ts` — Sum of `BedrockTokensUsed` >
+  1,000,000 over a 60-minute window on the `grid-sensor-alert-handler`
+  service dimension → ops-alerts SNS. Threshold rationale documented
+  inline (~$9 of Sonnet 4.6 spend; well above normal-traffic burst,
+  well below "I just lost meaningful money"). De-risks 80% of
+  downstream nodes — every later node uses this same plumbing.
+  Deps: `@langchain/core`, `@langchain/aws`, `@langchain/langgraph`
+  installed at v1.x stable.
+- 🚧 **P8.3** Severity classifier node — **code complete; verification
+  trio pending on user machine.** `src/lib/severity-classifier.ts`
+  exposes `classifySeverity(event, threshold) → Severity`. Output Zod
+  schema locks `severity: P0|P1|P2|P3`, `confidence: [0, 1]`,
+  `reasoning: 10-500 chars`. System prompt anchors all four tiers
+  with explicit deviation magnitudes tied to NERC bands (>2 Hz
+  outside band → P0, etc.) so classification is consistent across
+  invocations. Defensive guard: throws on non-breach inputs (caller
+  bug guard — severity classification only makes sense for events
+  that exceeded a threshold). 14 unit tests in
+  `src/__tests__/severity-classifier.test.ts` covering tier-mapping
+  fixture matrix, non-breach guard, schema/messages contract, prompt
+  content (sensorId/value/threshold), system-prompt anchors all four
+  tiers, error propagation, and 5 schema-bounds tests. **Verification
+  to run on resume:** `npm run build` + `npm test -- severity-classifier`
+  + `npx cdk synth GridSensorObservabilityStack > /dev/null`.
 - ⬜ **P8.4** Routing strategy node + narrative generator node — same
   pattern as P8.3, mechanical once plumbing is solid. Output Zod
   schemas locked.
@@ -915,3 +945,98 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     bad sensorId pattern returned 400 with Zod `fieldErrors`;
     malformed `from` timestamp returned 400; unknown-but-valid
     sensorId returned 200 with `count: 0` (empty path doesn't error).
+
+- **Day 3** (2026-05-10) — opened on resume with the **fourth
+  recurrence** of the Kinesis rollback orphan (this morning's
+  `cdk deploy --all` failed early-validation on
+  `AWS::Kinesis::Stream` because last night's destroy succeeded at
+  the CFN layer but left the underlying stream behind). Promoted
+  `phase-03-storage-processing.md` Deploy lesson #4 from "edge case
+  captured during Day-1 churn" to "**recurring class of failure**"
+  with the recurrence log dated. Captured `--enforce-consumer-deletion`
+  as the missing flag that may have made earlier delete attempts
+  hang in `DELETING`. Added `scripts/post-destroy-check.sh` —
+  bash verifier that polls Kinesis after destroy and prints the
+  cleanup recipe inline if an orphan is detected. Wired into
+  `npm run destroy` via semicolon (intentionally not `&&` — the
+  check should run especially when destroy partially fails).
+  Standalone `npm run destroy:check` available for manual use.
+  Cleanup recipe ran successfully; redeploy completed cleanly with
+  all seven stacks `CREATE_COMPLETE`.
+  - **P8.1 ✅ deploy-verified:** post-redeploy verification confirmed
+    `BEDROCK_MODEL_ID = us.anthropic.claude-sonnet-4-6` env var set
+    on the alert handler Lambda and the IAM grant present with the
+    exact expected shape (`Action: bedrock:InvokeModel`,
+    `Resource: [foundation-model/anthropic.claude-sonnet-4-6,
+    inference-profile/us.anthropic.claude-sonnet-4-6]`,
+    `Sid: InvokeClaudeSonnetViaInferenceProfile`). End-to-end pipeline
+    smoke-tested via `simulate.ts --count 5` → readings table scan
+    confirmed records for `sensor-002`, `sensor-003`, `sensor-004`
+    (random sensor selection in simulator); Query API returned the
+    expected envelope. Live Bedrock invocation through the US
+    inference profile returned a real Claude Sonnet 4.6 response
+    (`msg_bdrk_01Rjo8hW9nqDqKtdnVUBTR3D`, 14 input + 16 output tokens).
+  - **P8.2 ✅ unit-tested + synth-verified:**
+    `src/lib/llm-client.ts` (~150 lines) wraps `ChatBedrockConverse`
+    from `@langchain/aws@1.x` with a `invokeStructured(schema,
+    messages)` surface. `maxRetries: 1` cost guardrail, defensive
+    token extraction across `usage_metadata` and
+    `response_metadata.usage` field-name variations, lazy singleton
+    client. Emits `BedrockInvocations` / `BedrockLatencyMs` /
+    `BedrockTokensUsed` / `BedrockFallback` EMF metrics.
+    `src/__tests__/llm-client.test.ts` — 8 unit tests covering happy
+    path, two token-extraction fallback paths, missing-usage edge
+    case, retry cap, model+region passing, error path, lazy
+    singleton. CDK side: `BedrockTokens-Runaway` alarm in
+    `observability-stack.ts` — Sum > 1M tokens / 60min on the alert
+    handler service dimension → ops-alerts SNS. Threshold rationale
+    documented inline (~$9 of Sonnet 4.6 spend; well above normal
+    burst, well below "I just lost meaningful money"); re-evaluation
+    triggers documented (alert volume 10×, model swap to Opus tier,
+    retry cap bump). Unrelated cleanup folded in: removed dead
+    replay-stub code from `dlq-inspector.ts` (`KinesisClient`,
+    `PutRecordCommand`, `KINESIS_STREAM_NAME`); replay flag-set warn
+    retained with a checklist of what shipping replay actually
+    entails. New deps: `@langchain/core`, `@langchain/aws`,
+    `@langchain/langgraph` at v1.x stable.
+  - **P8.3 🚧 code complete; verification pending:**
+    `src/lib/severity-classifier.ts` (~100 lines) exposes
+    `classifySeverity(event, threshold) → Severity` — first
+    LangGraph node, currently a plain async function (graph
+    assembly happens at P8.5). Output Zod schema bounds tier (`P0|
+    P1|P2|P3`), confidence (`[0, 1]`), reasoning (`10-500 chars`).
+    System prompt anchors all four tiers with explicit deviation
+    magnitudes tied to NERC bands so classifications are consistent
+    across invocations. Defensive `if (!threshold.exceeded) throw`
+    guard against caller bug. `src/__tests__/severity-classifier.test.ts`
+    — 14 unit tests across two describe blocks: tier-mapping
+    fixture matrix (one per P0/P1/P2/P3), non-breach guard,
+    schema-and-messages contract, prompt content
+    (sensorId/value/threshold), system-prompt-anchors-all-four
+    test, error propagation, plus 5 schema-bounds tests.
+    Verification trio (`npm run build`, `npm test --
+    severity-classifier`, `npx cdk synth`) pending on user machine
+    on return; ROADMAP will flip to ✅ once green.
+  - **Model swap captured during P8.1 work** (Day 2 → Day 3
+    boundary): the original `phase-08-ai-ml-integration.md`
+    pre-flight 2 named `anthropic.claude-3-5-sonnet-20241022-v2:0`,
+    which returned `ResourceNotFoundException: This model version
+    has reached the end of its life` on first invocation. Pivoted
+    to `anthropic.claude-sonnet-4-6` after `aws bedrock
+    list-foundation-models` showed it as the current Sonnet tier.
+    Bare-model-ID invocation then returned `ValidationException:
+    ... isn't supported with on-demand throughput`, surfacing the
+    inference-profile pattern. Swapped to
+    `us.anthropic.claude-sonnet-4-6` (US profile chosen over global
+    for data-residency on a US grid telemetry workload). Pre-flight
+    2 + 7 of the decision doc rewritten to document the new pattern
+    inline; future-state cost optimization (Sonnet for narrative,
+    Haiku 4.5 for classification + routing) captured for P8.4
+    review.
+  - **Phase 8 progress so far:** 2 of 6 sub-phases shipped (P8.1,
+    P8.2); 1 in flight (P8.3, awaiting verification); 3 to go
+    (P8.4 routing + narrative nodes, P8.5 LangGraph wire-up + deploy
+    + smoke test, P8.6 MCP server). EoD-Day-3 target adjusted to
+    "all of P8 complete" — achievable if P8.3 verifies clean, P8.4
+    is mostly mechanical given P8.2/P8.3 set the pattern, and P8.6
+    holds to its 9pm cut-line.

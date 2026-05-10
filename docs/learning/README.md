@@ -37,6 +37,9 @@ filled.
 | [`synthetic-data-and-simulation.md`](synthetic-data-and-simulation.md) | P4 | ✅ filled | Gaussian distributions, Box-Muller transform, organic vs adversarial generation, fault injection patterns |
 | [`aws-step-functions.md`](aws-step-functions.md) | P5 | ✅ filled | Standard vs Express workflows, state types, error handling, JSONPath |
 | [`cdk-as-typed-model.md`](cdk-as-typed-model.md) | P5 | ✅ filled | CDK's defining property vs Terraform/CloudFormation; typed cross-stack contracts; pitfalls (predicate duplication, deploy ordering, L2 interface drift); CDK vs Pulumi vs CDKTF vs Terraform |
+| [`langchain-langgraph.md`](langchain-langgraph.md) | P8 | 🚧 partial (P8.2 patterns filled; LangGraph assembly added at P8.5) | LangChain vs LangGraph layering; `ChatBedrockConverse` over `BedrockChat`; `withStructuredOutput` + Zod for typed JSON; Bedrock model lifecycle + inference profiles; LLM cost guardrails at three time horizons; hybrid Step Functions + LangGraph composition |
+| _(AWS Bedrock)_ | P8 | ⬜ planned | Foundation models vs inference profiles; Converse API; pricing; model lifecycle |
+| _(Model Context Protocol)_ | P8 | ⬜ planned | MCP server architecture; stdio vs HTTP/SSE transports; tool schema; Claude Desktop / Code integration |
 | _(Lambda Powertools)_ | recurring | ⬜ planned | Logger, Tracer, Metrics, Idempotency utilities |
 | _(DynamoDB)_ | P3 | ⬜ planned | Single-table design, partition keys, GSIs, on-demand vs provisioned |
 

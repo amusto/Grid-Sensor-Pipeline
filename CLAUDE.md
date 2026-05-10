@@ -39,18 +39,22 @@ grid-sensor-pipeline/
 │   │   ├── dlq-inspector.ts      # SQS DLQ → structured log + SNS alert + optional replay
 │   │   └── query.ts              # API Gateway → DynamoDB range query
 │   ├── lib/
-│   │   ├── validator.ts          # Zod schema + validateSensorEvent() — I/O boundary only
-│   │   ├── repository.ts         # SensorRepository — DynamoDB put/query, no business logic
-│   │   ├── threshold.ts          # Threshold evaluation logic — pure function, no I/O
-│   │   ├── types.ts              # SensorEvent, SensorReading, AlertContext
-│   │   ├── logger.ts             # Powertools Logger singleton
-│   │   ├── tracer.ts             # Powertools Tracer singleton
-│   │   └── metrics.ts            # Powertools Metrics singleton
+│   │   ├── validator.ts             # Zod schema + validateSensorEvent() — I/O boundary only
+│   │   ├── repository.ts            # SensorRepository — DynamoDB put/query, no business logic
+│   │   ├── threshold.ts             # Threshold evaluation logic — pure function, no I/O
+│   │   ├── llm-client.ts            # P8.2: ChatBedrockConverse wrapper; invokeStructured(schema, msgs); maxRetries=1; emits BedrockTokensUsed/Latency/Invocations/Fallback metrics
+│   │   ├── severity-classifier.ts   # P8.3: classifySeverity(event, threshold) → {severity, confidence, reasoning} — first LangGraph node, currently a plain async function
+│   │   ├── types.ts                 # SensorEvent, SensorReading, AlertContext
+│   │   ├── logger.ts                # Powertools Logger singleton
+│   │   ├── tracer.ts                # Powertools Tracer singleton
+│   │   └── metrics.ts               # Powertools Metrics singleton
 │   └── __tests__/
 │       ├── processor.test.ts
 │       ├── validator.test.ts
 │       ├── threshold.test.ts
-│       └── repository.test.ts
+│       ├── repository.test.ts
+│       ├── llm-client.test.ts
+│       └── severity-classifier.test.ts
 ├── infra/
 │   ├── bin/app.ts
 │   └── lib/
@@ -168,18 +172,29 @@ npx ts-node scripts/simulate.ts --count 50   # send 50 synthetic sensor events
 
 | Metric | Unit | Emitted by |
 |--------|------|-----------|
-| `EventsProcessed` | Count | processor |
-| `ProcessingLatencyMs` | Milliseconds | processor |
+| `EventsProcessed` | Count | processor (dimensioned by `ReadingType`) |
+| `ProcessingLatencyMs` | Milliseconds | processor (dimensioned by `ReadingType`) |
 | `ValidationErrors` | Count | processor |
 | `PartialBatchFailures` | Count | processor |
+| `DuplicateWrites` | Count | processor |
 | `DlqMessagesReceived` | Count | dlq-inspector |
+| `BedrockInvocations` | Count | alert-handler (via `lib/llm-client.ts`) |
+| `BedrockLatencyMs` | Milliseconds | alert-handler (via `lib/llm-client.ts`) |
+| `BedrockTokensUsed` | Count | alert-handler — sum of input + output tokens per call. **Alarm watches this.** |
+| `BedrockFallback` | Count | alert-handler — incremented on Bedrock error / parse failure (caller's fail-soft path) |
+| `QueriesServed` | Count | query |
+| `QueryLatencyMs` | Milliseconds | query |
+| `QueryItemsReturned` | Count | query |
+| `QueryValidationErrors` | Count | query |
+| `QueryFailures` | Count | query |
 | `AlertWorkflowStarted` | Count | IoT Rules Engine (CloudWatch auto-metric) |
 | `AlertWorkflowFailed` | Count | Step Functions (CloudWatch auto-metric) |
 
 **Alarms:**
-- `GridSensor-DLQ-Messages` — DLQ depth ≥ 1 → SNS (P1)
-- `GridSensor-P99-Latency` — P99 > 2000ms for 3 min → SNS
-- `AlertWorkflow-Failures` — Step Functions ExecutionsFailed ≥ 1 → SNS
+- `GridSensor-DLQ-Messages` — DLQ depth ≥ 1 → ops-alerts SNS
+- `GridSensor-P99-Latency` — P99 > 2000ms for 3 min (voltage canary) → ops-alerts SNS
+- `AlertWorkflow-Failures` — Step Functions `ExecutionsFailed` ≥ 1 → ops-alerts SNS
+- `BedrockTokens-Runaway` — `Sum(BedrockTokensUsed) > 1,000,000` over 60-minute window on the `grid-sensor-alert-handler` service dimension → ops-alerts SNS. Cost guardrail; rationale + re-evaluation triggers documented inline in `observability-stack.ts`.
 
 **Datadog bridge (production):** Add Datadog Lambda Extension layer + `DD_API_KEY_SECRET_ARN` env var. EMF metrics forward automatically. No application code changes required.
 
@@ -215,12 +230,16 @@ npx ts-node scripts/simulate.ts --count 50   # send 50 synthetic sensor events
 |---|---|---|
 | `READINGS_TABLE` | processor, query | DynamoDB readings table name |
 | `IDEMPOTENCY_TABLE` | processor | DynamoDB idempotency table name |
-| `KINESIS_STREAM_NAME` | simulator (fallback), dlq-inspector (replay) | Kinesis stream name |
+| `KINESIS_STREAM_NAME` | simulator (fallback) | Kinesis stream name. Removed from dlq-inspector env in P8.2 — restore when replay-to-Kinesis ships. |
 | `IOT_ENDPOINT` | simulator | IoT Core data endpoint (from `aws iot describe-endpoint`) |
 | `ALERT_TOPIC_ARN` | alert-handler, dlq-inspector | SNS topic ARN |
 | `ALERT_STATE_MACHINE_ARN` | (injected by IoT rule — not in Lambda env) | Step Functions ARN |
-| `POWERTOOLS_SERVICE_NAME` | all Lambdas | e.g., `grid-sensor-processor` |
-| `LOG_LEVEL` | all Lambdas | `INFO` prod, `DEBUG` dev |
+| `BEDROCK_MODEL_ID` | alert-handler (read by `lib/llm-client.ts`) | Bedrock model identifier — for current Sonnet, this is the cross-region inference profile id `us.anthropic.claude-sonnet-4-6`, not a bare foundation-model id. **Single source of truth with the IAM grant** in `alert-workflow-stack.ts` (the constant `BEDROCK_MODEL_ID` there is consumed by both the env var and the `bedrock:InvokeModel` resource ARN, so they can never silently drift). |
+| `OPS_ALERT_TOPIC_ARN` | dlq-inspector | Ops-alerts SNS topic ARN (separate from grid-event `ALERT_TOPIC_ARN` — different audience, different SLA). |
+| `REPLAY_TO_KINESIS` | dlq-inspector | `true`/`false`. Currently a stub — flag-set logs a warning, no records replayed. See `phase-06-dlq-observability.md` pre-flight 1. |
+| `POWERTOOLS_SERVICE_NAME` | all Lambdas | e.g., `grid-sensor-processor`, `grid-sensor-alert-handler`, `grid-sensor-dlq-inspector`, `grid-sensor-query`. Default `service` dimension on all EMF metrics — observability widgets and alarms must filter at this dimension. |
+| `POWERTOOLS_METRICS_NAMESPACE` | all Lambdas | `GridSensorPipeline` |
+| `LOG_LEVEL` | all Lambdas | `INFO` prod, `DEBUG` dev. **Cost lever:** verbose `DEBUG` logging on the alert handler can multiply CloudWatch Logs ingest cost during prompt-iteration sessions. Drop back to `INFO` after debugging. |
 
 ---
 

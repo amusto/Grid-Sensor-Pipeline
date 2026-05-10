@@ -1,7 +1,8 @@
 # Verification Cheatsheet
 
 > **Status: living doc** — updated as phases ship new resources, Lambdas,
-> queues, or metrics. Last updated: Phase 6.
+> queues, or metrics. Last updated: Phase 8.2 (LangChain Bedrock client +
+> post-destroy verifier).
 
 > **When to use this.** Any time you want to verify *"is the pipeline
 > alive?"*, *"did the simulation actually flow through?"*, or *"where in
@@ -214,6 +215,100 @@ spikes:
 aws logs tail /aws/apigateway/grid-sensor-pipeline-query --since 15m
 ```
 
+**Gotcha — `count: 0` after a fresh deploy + simulator run.** The
+simulator picks sensor IDs randomly per run. `sensor-001` may not be
+in the table even though the pipeline is healthy. To find which
+sensor IDs actually have data:
+
+```bash
+aws dynamodb scan \
+  --table-name grid-sensor-pipeline-readings \
+  --region us-east-1 \
+  --projection-expression "pk" \
+  --query 'Items[*].pk.S' --output text \
+  | tr '\t' '\n' | sort -u
+```
+
+Then re-curl with one of the listed IDs.
+
+---
+
+## Tier 4.6 — Bedrock + LangChain (Phase 8+)
+
+```bash
+# Confirm the alert handler has the BEDROCK_MODEL_ID env var
+aws lambda get-function-configuration \
+  --function-name grid-sensor-pipeline-alert-handler \
+  --region us-east-1 \
+  --query 'Environment.Variables.BEDROCK_MODEL_ID' --output text
+# Expected: us.anthropic.claude-sonnet-4-6
+```
+
+```bash
+# Confirm the Bedrock IAM grant on the alert handler's role
+ROLE=$(aws lambda get-function-configuration \
+  --function-name grid-sensor-pipeline-alert-handler \
+  --region us-east-1 \
+  --query 'Role' --output text | sed 's|.*role/||')
+
+aws iam list-role-policies --role-name "$ROLE" \
+  --query 'PolicyNames' --output text | tr '\t' '\n' | \
+  while read -r POLICY; do
+    aws iam get-role-policy --role-name "$ROLE" --policy-name "$POLICY" \
+      --query 'PolicyDocument.Statement' --output json | \
+      jq '.[] | select((.Action | tostring | test("bedrock")))'
+  done
+# Expected: one statement with bedrock:InvokeModel and a 2-element
+# Resource array (inference profile + foundation model). NO bedrock:* wildcard.
+```
+
+```bash
+# Direct invocation test (current Sonnet on Bedrock requires the
+# inference profile ID — bare model ID returns ValidationException)
+aws bedrock-runtime invoke-model \
+  --region us-east-1 \
+  --model-id "us.anthropic.claude-sonnet-4-6" \
+  --content-type application/json \
+  --accept application/json \
+  --cli-binary-format raw-in-base64-out \
+  --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":50,"messages":[{"role":"user","content":"Say hello in one short sentence."}]}' \
+  /tmp/bedrock-test.json && cat /tmp/bedrock-test.json | jq .
+```
+
+```bash
+# Bedrock metrics from the most recent breach (after P8.5 wires
+# LangGraph into the alert handler)
+aws cloudwatch get-metric-statistics --region us-east-1 \
+  --namespace GridSensorPipeline --metric-name BedrockTokensUsed \
+  --dimensions Name=service,Value=grid-sensor-alert-handler \
+  --start-time $(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  --period 300 --statistics Sum \
+  --query 'Datapoints[*].{Time:Timestamp,Tokens:Sum}' --output table
+
+# Same shape works for BedrockInvocations, BedrockLatencyMs, BedrockFallback
+```
+
+```bash
+# Runaway-cost alarm state (should be OK in steady state)
+aws cloudwatch describe-alarms --region us-east-1 \
+  --alarm-names BedrockTokens-Runaway \
+  --query 'MetricAlarms[].{Name:AlarmName,State:StateValue,Reason:StateReason}' \
+  --output table
+```
+
+**Gotcha — `ResourceNotFoundException: This model version has reached
+the end of its life`.** Means the model id is now retired. Re-list
+active models with `aws bedrock list-foundation-models --region
+us-east-1 --by-provider Anthropic --output json | jq` and pick the
+current Sonnet tier. Then update both `BEDROCK_MODEL_ID` constant +
+IAM ARN in `infra/lib/alert-workflow-stack.ts`.
+
+**Gotcha — `ValidationException: ... isn't supported with on-demand
+throughput`.** Means the bare foundation-model ID needs an inference
+profile. Run `aws bedrock list-inference-profiles --region us-east-1
+--output json | jq` and use the matching `us.*` profile id.
+
 ---
 
 ## Tier 5 — Step Functions executions (alert workflow)
@@ -259,6 +354,51 @@ Status values to watch:
 | **DynamoDB explorer** | `https://us-east-1.console.aws.amazon.com/dynamodbv2/home?region=us-east-1#table?name=grid-sensor-pipeline-readings` → "Explore items" | Browse stored readings without writing CLI queries |
 | **SQS DLQ peek** | `https://us-east-1.console.aws.amazon.com/sqs/v3/home?region=us-east-1#/queues` → click the DLQ → "Send and receive messages" → "Poll for messages" | Inspect dead-lettered records without consuming them |
 | **CloudWatch Alarms** | `https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:` | Alarm state history |
+
+---
+
+## Pre-deploy state check — orphan detection
+
+Before any `npm run deploy` after a destroy, confirm no orphaned
+resources are about to collide with the redeploy. This is automated
+in `npm run destroy` (post-destroy-check.sh runs after CDK destroy)
+but useful to run standalone if anything seems off:
+
+```bash
+npm run destroy:check
+```
+
+Or the underlying check directly:
+
+```bash
+aws kinesis describe-stream-summary \
+  --stream-name grid-sensor-pipeline-telemetry \
+  --region us-east-1 \
+  --query 'StreamDescriptionSummary.{Name:StreamName,Status:StreamStatus}' 2>&1
+# Expected: ResourceNotFoundException = clean state
+# Anything else = orphan present, see phase-03-storage-processing.md
+# Deploy lesson #4 for the cleanup recipe.
+```
+
+If an orphan is detected:
+
+```bash
+aws kinesis delete-stream \
+  --stream-name grid-sensor-pipeline-telemetry \
+  --enforce-consumer-deletion \
+  --region us-east-1
+
+# Poll until gone (10-30 seconds typical)
+until aws kinesis describe-stream-summary \
+  --stream-name grid-sensor-pipeline-telemetry \
+  --region us-east-1 2>&1 | grep -q ResourceNotFoundException
+do sleep 2; done && echo "✅ stream gone"
+
+npm run deploy
+```
+
+This is the documented cure for the recurring CFN-leaks-Kinesis
+class of failure (4+ occurrences as of Day 3).
 
 ---
 
