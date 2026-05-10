@@ -57,9 +57,12 @@ const NAMESPACE = 'GridSensorPipeline';
  */
 const SERVICE_PROCESSOR = 'grid-sensor-processor';
 const SERVICE_DLQ_INSPECTOR = 'grid-sensor-dlq-inspector';
-// Alert handler emits AlertsNotified / AlertsEscalated, but those have
-// a ReadingType dimension and are queried via SEARCH (which doesn't need
-// a service filter since the metric names are unique to that handler).
+const SERVICE_ALERT_HANDLER = 'grid-sensor-alert-handler';
+// Alert handler emits AlertsNotified / AlertsEscalated with a ReadingType
+// dimension (queried via SEARCH below). Bedrock metrics — emitted by
+// `lib/llm-client.ts` from inside the alert handler — carry only the
+// default `service` dimension, which is why `SERVICE_ALERT_HANDLER` is
+// needed for the runaway-cost alarm.
 
 /**
  * Build a `cloudwatch.Metric` for a plain (non-ReadingType-dimensioned)
@@ -152,7 +155,12 @@ export class ObservabilityStack extends cdk.Stack {
       logGroup: inspectorLogGroup,
       environment: {
         OPS_ALERT_TOPIC_ARN: opsAlertTopic.topicArn,
-        KINESIS_STREAM_NAME: props.stream.streamName,
+        // KINESIS_STREAM_NAME removed — replay-to-Kinesis is not yet
+        // implemented in dlq-inspector.ts. When replay ships as its
+        // own sub-phase (logged warning becomes real `PutRecordCommand`
+        // call), this env var goes back here AND
+        // `props.stream.grantWrite(inspector)` needs to be added below
+        // so the inspector can write to the stream.
         // Default OFF — see docs/decisions/phase-06-dlq-observability.md
         REPLAY_TO_KINESIS: 'false',
         POWERTOOLS_SERVICE_NAME: 'grid-sensor-dlq-inspector',
@@ -245,6 +253,51 @@ export class ObservabilityStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     sfFailuresAlarm.addAlarmAction(new cwActions.SnsAction(opsAlertTopic));
+
+    // 4. BedrockTokensUsed runaway — added P8.2.
+    //
+    // Why this alarm exists: a malformed-output bug in a LangGraph
+    // node could trigger LangChain's parse-failure retry path. We've
+    // capped retries at 1 in `lib/llm-client.ts` to bound the spiral,
+    // but a stuck loop at the *graph* layer (e.g., a node that hands
+    // off to itself on a bad parse) could still 10× the bill in an
+    // afternoon. This alarm fires before the credit-card surprise.
+    //
+    // Threshold rationale (1,000,000 tokens / 60-min window):
+    //   - At Sonnet 4.6 rates (~$3 in / $15 out per MTok) and a
+    //     pessimistic 50/50 input/output split, 1M tokens ≈ $9. That's
+    //     the "stop and look" threshold — well above any realistic
+    //     normal-traffic burst (a few alerts/hour × ~1k tokens each =
+    //     under 10k/hr nominally), well below "I just lost a meaningful
+    //     amount of money."
+    //   - Window of 60 min instead of 1 min: looking for sustained
+    //     spend, not a single chatty invocation. A 60-second alarm
+    //     would flap on any one batch of test invocations.
+    //   - Statistic: `Sum`. Tokens aren't averageable.
+    //
+    // Re-evaluate this threshold if:
+    //   1. Production alert volume rises by 10×+ (legitimate traffic
+    //      starts breaching the alarm).
+    //   2. The model is swapped to a higher-cost tier (Opus) — the
+    //      dollar impact at 1M tokens shifts.
+    //   3. The retry cap in `lib/llm-client.ts` is bumped above 1.
+    const bedrockRunawayAlarm = new cloudwatch.Alarm(this, 'BedrockTokensRunawayAlarm', {
+      alarmName: 'BedrockTokens-Runaway',
+      alarmDescription:
+        'Bedrock token usage exceeded 1M tokens in a 60-minute window. Either alert volume jumped, a LangGraph node is in a parse-retry loop, or a prompt is over-stuffed. Inspect lib/llm-client.ts retry caps and recent alert handler logs.',
+      metric: new cloudwatch.Metric({
+        namespace: NAMESPACE,
+        metricName: 'BedrockTokensUsed',
+        statistic: 'Sum',
+        period: cdk.Duration.hours(1),
+        dimensionsMap: { service: SERVICE_ALERT_HANDLER },
+      }),
+      threshold: 1_000_000,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    bedrockRunawayAlarm.addAlarmAction(new cwActions.SnsAction(opsAlertTopic));
 
     /**
      * CloudWatch dashboard. One URL, all primary signals.

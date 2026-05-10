@@ -326,37 +326,105 @@ auth, inline policies are the correctness-preserving choice.
 
 ---
 
-### 4. CFN rollback silently leaks Kinesis streams
+### 4. CFN destroy silently leaks Kinesis streams (recurring class of failure)
 
-**What happened.** After each failed deploy attempt, CloudFormation
-attempted rollback. The S3 bucket, Firehose, and IAM role all rolled
-back cleanly. But the `AWS::Kinesis::Stream` resource (`grid-sensor-pipeline-telemetry`)
-remained `ACTIVE` *outside* CFN's tracking. The next deploy attempt
-failed early on "Resource of type `AWS::Kinesis::Stream` with identifier
-... already exists."
+**Promotion note (Day 3).** This started as a "captured twice" edge
+case during the Day-1 deploy run. We've now hit it **four times** —
+twice during Day-1 deploy churn, once on the Day-2 morning resume,
+and again on Day-3's morning resume after a clean Day-2 evening
+destroy. **At four occurrences in three days, this is no longer an
+edge case; it's a recurring class of failure with this AWS service
+combination.** Section reframed accordingly.
 
-**Recovery procedure** (used twice during the deploy run):
+**What happens.** When `cdk destroy --all` (or a CFN rollback after a
+failed deploy) tears down the stack containing
+`AWS::Kinesis::Stream`, CloudFormation reports the stack-deletion
+success cleanly. But the underlying `DeleteStream` API call against
+Kinesis can race against any holder of a stream reference (Firehose
+delivery stream as source, Lambda ESM consumer, or registered
+enhanced-fan-out consumer). When the race is lost, the CFN stack is
+gone but the stream survives in `ACTIVE` or `DELETING` status,
+*detached from CFN tracking*. The next deploy attempt then fails
+early-validation with:
 
-```bash
-aws cloudformation delete-stack --stack-name GridSensorKinesisStack
-aws cloudformation wait stack-delete-complete --stack-name GridSensorKinesisStack
-
-aws kinesis delete-stream --stream-name grid-sensor-pipeline-telemetry
-aws kinesis wait stream-not-exists --stream-name grid-sensor-pipeline-telemetry
+```
+Resource of type 'AWS::Kinesis::Stream' with identifier
+'grid-sensor-pipeline-telemetry' already exists.
 ```
 
-**Pattern lesson.** CloudFormation's rollback for `AWS::Kinesis::Stream`
-is historically flaky — the stream goes into `DELETING` status and
-either hangs or completes silently while the stack moves on. Two
-production hardenings worth knowing:
+**Why this is hard to prevent.** CFN's deletion ordering only
+respects the dependency graph it can see. Firehose-as-source and
+Lambda ESM-as-consumer introduce a control-plane reference to the
+stream that lives outside CFN's view of the stack. The stream
+deletion call gets `ResourceInUseException` retries that don't always
+complete inside CFN's window before the stack is marked
+`DELETE_COMPLETE`.
 
-1. **Streams in their own micro-stack.** Separating the stream into its
-   own CDK stack means a rollback of any other stack doesn't try to
-   reach back and delete the stream. Smaller blast radius.
-2. **`RemovalPolicy.RETAIN` on the stream.** Tells CFN explicitly "don't
-   delete this on rollback." Sidesteps the bug at the cost of manual
-   cleanup. POC posture chose `DESTROY` for cost cleanup; production
-   posture is `RETAIN` with explicit lifecycle scripts.
+**Verification command** — run *before* every fresh deploy after a
+destroy to catch the orphan before CFN does:
+
+```bash
+aws kinesis describe-stream-summary \
+  --stream-name grid-sensor-pipeline-telemetry \
+  --region us-east-1 \
+  --query 'StreamDescriptionSummary.{Name:StreamName,Status:StreamStatus}' \
+  2>&1
+```
+
+- `ResourceNotFoundException` → clean state, deploy will succeed.
+- Returns a stream summary → orphan present, run the cleanup recipe.
+
+**Cleanup recipe** — production-tested across all four occurrences,
+including the `--enforce-consumer-deletion` flag (omitted in earlier
+captures, which may be why some delete attempts left the stream in
+`DELETING` indefinitely):
+
+```bash
+aws kinesis delete-stream \
+  --stream-name grid-sensor-pipeline-telemetry \
+  --enforce-consumer-deletion \
+  --region us-east-1
+
+# poll until gone (10-30 seconds typical)
+until aws kinesis describe-stream-summary \
+  --stream-name grid-sensor-pipeline-telemetry \
+  --region us-east-1 2>&1 | grep -q ResourceNotFoundException
+do sleep 2; done && echo "✅ stream gone"
+
+# now safe to redeploy
+npm run deploy
+```
+
+**Why `--enforce-consumer-deletion`.** Forces removal of any
+registered enhanced-fan-out consumers that might still be holding the
+stream. Without it, `delete-stream` returns
+`ResourceInUseException` and stays in limbo.
+
+**Automated detection** — `scripts/post-destroy-check.sh` (added
+Day 3 alongside this lesson promotion) runs after every
+`npm run destroy` and reports whether the stream survived. Wired into
+the `destroy` npm script so the check happens by default; exit code
+1 if an orphan is detected so CI / wrapper scripts can react.
+
+**Production hardenings worth knowing** (still applicable; not a
+silver bullet for the POC):
+
+1. **Streams in their own micro-stack.** Separating the stream into
+   its own CDK stack means a rollback of any other stack doesn't try
+   to reach back and delete the stream. Smaller blast radius.
+2. **`RemovalPolicy.RETAIN` on the stream.** Tells CFN explicitly
+   "don't delete this on rollback." Sidesteps the bug at the cost of
+   manual cleanup. POC posture chose `DESTROY` for cost cleanup;
+   production posture is `RETAIN` with explicit lifecycle scripts.
+3. **Two-pass destroy in CI.** First pass: `cdk destroy`. Second
+   pass: poll for the stream and force-delete if present. This is
+   essentially what `scripts/post-destroy-check.sh` automates for
+   local development.
+
+**Recurrence log:**
+- Day 1 morning — Failed deploy + rollback orphan (×2 within one session).
+- Day 2 morning — Resumed work, deploy failed early-validation.
+- Day 3 morning — Same. Triggered the lesson reframe + script add.
 
 ---
 

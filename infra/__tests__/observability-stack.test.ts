@@ -80,7 +80,22 @@ describe('ObservabilityStack template', () => {
       });
     });
 
-    it('all three alarms publish to the ops-alerts SNS topic', () => {
+    it('BedrockTokens-Runaway alarm exists with threshold > 1M over 1h (P8.2 cost guardrail)', () => {
+      const template = synth();
+      template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+        AlarmName: 'BedrockTokens-Runaway',
+        MetricName: 'BedrockTokensUsed',
+        Namespace: 'GridSensorPipeline',
+        Statistic: 'Sum',
+        Threshold: 1_000_000,
+        // 1h period = 3600s; CFN serializes as a number
+        Period: 3600,
+        EvaluationPeriods: 1,
+        ComparisonOperator: 'GreaterThanThreshold',
+      });
+    });
+
+    it('all four alarms publish to the ops-alerts SNS topic', () => {
       const template = synth();
       const alarms = template.findResources('AWS::CloudWatch::Alarm');
       for (const alarm of Object.values(alarms)) {

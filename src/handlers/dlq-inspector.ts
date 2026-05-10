@@ -21,17 +21,12 @@ import {
   SNSClient,
   PublishCommand,
 } from '@aws-sdk/client-sns';
-import {
-  KinesisClient,
-  PutRecordCommand,
-} from '@aws-sdk/client-kinesis';
 import { MetricUnit } from '@aws-lambda-powertools/metrics';
 import type { Context, SQSBatchResponse, SQSEvent, SQSRecord } from 'aws-lambda';
 import { logger } from '../lib/logger';
 import { metrics } from '../lib/metrics';
 
 const OPS_ALERT_TOPIC_ARN = process.env.OPS_ALERT_TOPIC_ARN ?? '';
-const KINESIS_STREAM_NAME = process.env.KINESIS_STREAM_NAME ?? '';
 const REPLAY_TO_KINESIS = process.env.REPLAY_TO_KINESIS === 'true';
 
 if (!OPS_ALERT_TOPIC_ARN) {
@@ -39,7 +34,21 @@ if (!OPS_ALERT_TOPIC_ARN) {
 }
 
 const sns = new SNSClient({});
-const kinesis = REPLAY_TO_KINESIS ? new KinesisClient({}) : null;
+
+/**
+ * Replay-to-Kinesis is INTENTIONALLY UNIMPLEMENTED at this point.
+ *
+ * The decision log (`docs/decisions/phase-06-dlq-observability.md`
+ * pre-flight 1) commits to "log + alert + metric, NO auto-replay."
+ * `REPLAY_TO_KINESIS` is the opt-in hook for a future operator who
+ * has triaged a poison pill and decided replay is safe.
+ *
+ * Until replay ships as its own sub-phase (with a unit test, an
+ * IAM `kinesis:PutRecord` grant on the inspector's role, and the
+ * `KINESIS_STREAM_NAME` env var restored in CDK), the per-message
+ * branch below logs a clear warning when the flag is set so an
+ * operator gets feedback that nothing is being replayed.
+ */
 
 /**
  * Lambda's `onFailure` destination for a Kinesis ESM wraps the failed
@@ -133,16 +142,14 @@ const inspectMessage = async (
   );
 
   // Conditional replay — only if explicitly opted in.
-  if (REPLAY_TO_KINESIS && kinesis && KINESIS_STREAM_NAME) {
-    // The envelope doesn't carry the original payload bytes; replay would
-    // require fetching from Kinesis using the sequence range. For the
-    // POC we log that replay was *requested* but not implemented here —
-    // production would do the GetRecords call and re-PutRecord.
+  if (REPLAY_TO_KINESIS) {
+    // Currently a documented stub; see the module-level comment for
+    // the checklist of what shipping replay actually entails (env var
+    // restored in CDK, IAM grant, unit test, real PutRecord call).
     logger.warn(
-      'REPLAY_TO_KINESIS is set but POC implementation does not fetch ' +
-        'the original payload from Kinesis. Production should call ' +
-        'GetShardIterator + GetRecords + PutRecord to replay.',
-      { sequenceRange, streamName: KINESIS_STREAM_NAME },
+      'REPLAY_TO_KINESIS=true is set but replay-to-Kinesis is not yet ' +
+        'implemented. No records will be replayed. Track in ROADMAP if needed.',
+      { sequenceRange },
     );
     return { replayed: false };
   }
