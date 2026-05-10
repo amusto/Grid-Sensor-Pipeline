@@ -16,8 +16,8 @@ elapsed time depends on focus and velocity.
 ## Current state
 
 **Today:** Day 3 (2026-05-10)
-**Active phase:** Phase 8 — AI/ML Integration (in progress)
-**Last shipped:** P8.1 (Bedrock IAM grant + Sonnet 4.6 inference profile, deploy-verified Day 3 morning) and P8.2 (LangChain client wrapper + runaway-cost alarm, unit-tested + synth-verified). P8.3 (severity classifier node) is code-complete; verification trio (`npm run build`, `npm test -- severity-classifier`, `npx cdk synth`) pending on user machine.
+**Active phase:** Phase 8 — AI/ML Integration (in progress; 3 of 6 sub-phases shipped)
+**Last shipped:** P8.3 (severity classifier node — first LangGraph node, currently a plain async function; 14 unit tests green; full verification trio confirmed Day 3 evening). P8.1 + P8.2 also shipped Day 3.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
 ---
@@ -27,9 +27,9 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-Core (P1-P12):     [█████████████░░░░░░░] 66%   (45 / 68 sub-phases)
+Core (P1-P12):     [██████████████░░░░░░] 68%   (46 / 68 sub-phases)
 Stretch (P13-P14): [░░░░░░░░░░░░░░░░░░░░]  0%   ( 0 / 10 sub-phases)
-Combined:          [████████████░░░░░░░░] 58%   (45 / 78 sub-phases)
+Combined:          [████████████░░░░░░░░] 59%   (46 / 78 sub-phases)
 ```
 
 > **Core** is the MVP — what reviewers expect to see for the JD scope.
@@ -58,7 +58,7 @@ Combined:          [████████████░░░░░░░░
 | 5 | Alert workflow               | `██████████` | 100% | 6/6 | ✅ |
 | 6 | DLQ + observability          | `██████████` | 100% | 6/6 | ✅ |
 | 7 | Query API                    | `██████████` | 100% | 6/6 | ✅ |
-| 8 | AI/ML Integration            | `██████░░░░` |  33% | 2/6 | 🚧 |
+| 8 | AI/ML Integration            | `█████░░░░░` |  50% | 3/6 | 🚧 |
 | 9 | Agentic case routing         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
 | 10 | Datadog bridge              | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
 | 11 | Polish & teardown           | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
@@ -438,8 +438,7 @@ existing `NotifyOps` task — for agentic decisioning.
   downstream nodes — every later node uses this same plumbing.
   Deps: `@langchain/core`, `@langchain/aws`, `@langchain/langgraph`
   installed at v1.x stable.
-- 🚧 **P8.3** Severity classifier node — **code complete; verification
-  trio pending on user machine.** `src/lib/severity-classifier.ts`
+- ✅ **P8.3** Severity classifier node — `src/lib/severity-classifier.ts`
   exposes `classifySeverity(event, threshold) → Severity`. Output Zod
   schema locks `severity: P0|P1|P2|P3`, `confidence: [0, 1]`,
   `reasoning: 10-500 chars`. System prompt anchors all four tiers
@@ -1015,8 +1014,8 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     (sensorId/value/threshold), system-prompt-anchors-all-four
     test, error propagation, plus 5 schema-bounds tests.
     Verification trio (`npm run build`, `npm test --
-    severity-classifier`, `npx cdk synth`) pending on user machine
-    on return; ROADMAP will flip to ✅ once green.
+    severity-classifier`, `npx cdk synth`) confirmed all green
+    Day 3 evening — P8.3 ✅.
   - **Model swap captured during P8.1 work** (Day 2 → Day 3
     boundary): the original `phase-08-ai-ml-integration.md`
     pre-flight 2 named `anthropic.claude-3-5-sonnet-20241022-v2:0`,
@@ -1033,10 +1032,11 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     inline; future-state cost optimization (Sonnet for narrative,
     Haiku 4.5 for classification + routing) captured for P8.4
     review.
-  - **Phase 8 progress so far:** 2 of 6 sub-phases shipped (P8.1,
-    P8.2); 1 in flight (P8.3, awaiting verification); 3 to go
-    (P8.4 routing + narrative nodes, P8.5 LangGraph wire-up + deploy
-    + smoke test, P8.6 MCP server). EoD-Day-3 target adjusted to
-    "all of P8 complete" — achievable if P8.3 verifies clean, P8.4
-    is mostly mechanical given P8.2/P8.3 set the pattern, and P8.6
-    holds to its 9pm cut-line.
+  - **Phase 8 progress at end of Day 3:** 3 of 6 sub-phases shipped
+    (P8.1, P8.2, P8.3); 3 to go (P8.4 routing + narrative nodes,
+    P8.5 LangGraph wire-up + deploy + smoke test, P8.6 MCP server).
+    P8.4 + P8.5 expected to land Day 4 morning/afternoon (mechanical
+    given P8.2/P8.3 set the pattern); P8.6 holds to its 9pm cut-line.
+    Reactive-vs-predictive scope alignment captured in
+    `docs/_private/scope-alignment-reactive-vs-predictive.md` for
+    interview defense.
