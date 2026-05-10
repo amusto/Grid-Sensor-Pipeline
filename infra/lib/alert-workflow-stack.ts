@@ -14,6 +14,7 @@
 
 import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -21,6 +22,41 @@ import * as sns from 'aws-cdk-lib/aws-sns';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { Construct } from 'constructs';
+
+/**
+ * Bedrock model identifier used by the LangGraph alert flow.
+ *
+ * NOTE — this constant holds a **cross-region inference profile ID**,
+ * not a bare foundation-model ID. AWS migrated current-generation
+ * Anthropic models on Bedrock behind inference profiles (Sonnet 4.6
+ * onward); calling `InvokeModel` with the bare foundation-model ID
+ * returns `ValidationException: ... isn't supported with on-demand
+ * throughput. Retry your request with the ID or ARN of an inference
+ * profile that contains this model.` The `InvokeModel` API parameter
+ * is still called `modelId` in either case, which is why the env-var
+ * name `BEDROCK_MODEL_ID` is still accurate.
+ *
+ * `us.` prefix = US-region inference profile (routes among US regions
+ * only). Chosen over `global.` for data-residency conservatism on a
+ * US grid telemetry workload.
+ *
+ * The IAM grant below is resource-scoped to BOTH the profile ARN AND
+ * the underlying foundation-model ARN — the profile call internally
+ * dispatches to the foundation model in whichever US region it picks,
+ * so the principal needs permission on both. Wildcards rejected per
+ * `phase-08-ai-ml-integration.md` pre-flight 7.
+ *
+ * The handler reads `BEDROCK_MODEL_ID` from env so the LangChain
+ * client and the IAM grant can never drift apart silently.
+ */
+const BEDROCK_MODEL_ID = 'us.anthropic.claude-sonnet-4-6';
+
+/**
+ * The foundation model ID that the inference profile resolves to.
+ * Used only to construct the foundation-model ARN in the IAM grant
+ * below; the application never calls this ID directly.
+ */
+const BEDROCK_UNDERLYING_MODEL = 'anthropic.claude-sonnet-4-6';
 
 export interface AlertWorkflowStackProps extends cdk.StackProps {
   projectName: string;
@@ -91,6 +127,7 @@ export class AlertWorkflowStack extends cdk.Stack {
       logGroup: alertHandlerLogGroup,
       environment: {
         ALERT_TOPIC_ARN: alertTopic.topicArn,
+        BEDROCK_MODEL_ID,
         POWERTOOLS_SERVICE_NAME: 'grid-sensor-alert-handler',
         POWERTOOLS_METRICS_NAMESPACE: 'GridSensorPipeline',
         LOG_LEVEL: 'INFO',
@@ -105,6 +142,37 @@ export class AlertWorkflowStack extends cdk.Stack {
     });
 
     alertTopic.grantPublish(alertHandler);
+
+    /**
+     * P8.1 — Bedrock IAM grant for the cross-region inference profile.
+     *
+     * Two ARNs are required because invoking an inference profile
+     * dispatches to one of N underlying foundation-model invocations
+     * (the profile chooses the region at call time). The principal
+     * needs permission on both:
+     *
+     *  1. Inference-profile ARN — has an account-id slot:
+     *       `arn:aws:bedrock:<region>:<account>:inference-profile/<profileId>`
+     *
+     *  2. Foundation-model ARN — has an EMPTY account-id slot
+     *     (foundation models are AWS-managed, not per-account):
+     *       `arn:aws:bedrock:*::foundation-model/<modelId>`
+     *     Region is `*` because the profile may route to any US region.
+     *
+     * Wildcard `bedrock:*` grant rejected — would also allow
+     * `CreateModel` / `DeleteModel` / etc. Decision rationale in
+     * `docs/decisions/phase-08-ai-ml-integration.md` pre-flight 7.
+     */
+    const inferenceProfileArn = `arn:aws:bedrock:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:inference-profile/${BEDROCK_MODEL_ID}`;
+    const foundationModelArn = `arn:aws:bedrock:*::foundation-model/${BEDROCK_UNDERLYING_MODEL}`;
+    alertHandler.addToRolePolicy(
+      new iam.PolicyStatement({
+        sid: 'InvokeClaudeSonnetViaInferenceProfile',
+        effect: iam.Effect.ALLOW,
+        actions: ['bedrock:InvokeModel'],
+        resources: [inferenceProfileArn, foundationModelArn],
+      }),
+    );
 
     /**
      * State machine definition.

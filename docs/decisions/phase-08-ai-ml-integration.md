@@ -59,18 +59,48 @@ all explain the layering explicitly.
 
 ---
 
-## P8 pre-flight 2 — Claude 3.5 Sonnet via Bedrock
+## P8 pre-flight 2 — Claude Sonnet 4.6 via Bedrock (cross-region inference profile)
 
 **Concept.** Pick the model whose cost/quality tradeoff fits the task,
-not the cheapest or the most-capable.
+not the cheapest or the most-capable. When the platform's invocation
+surface evolves (bare model ID → inference profile), follow it
+deliberately rather than fighting it.
 
-**Decision.** Anthropic Claude 3.5 Sonnet via AWS Bedrock
-(`anthropic.claude-3-5-sonnet-20241022-v2:0`). Used for both
-classification reasoning and narrative generation.
+**Decision.** Anthropic Claude Sonnet 4.6 via AWS Bedrock,
+invoked through the **US cross-region inference profile**
+(`us.anthropic.claude-sonnet-4-6`). The underlying foundation model is
+`anthropic.claude-sonnet-4-6`. Used for both classification reasoning
+and narrative generation in the LangGraph alert flow.
+
+**Why an inference profile, not a bare model ID.** Current-generation
+Anthropic models on Bedrock ship behind cross-region inference
+profiles only — `InvokeModel` against the bare foundation-model ID
+returns `ValidationException: ... isn't supported with on-demand
+throughput`. The profile transparently routes calls among US regions
+for resilience. Discovered during P8.1 invocation test; recorded so
+the next person debugging this doesn't have to re-derive it.
+
+**`us.` vs `global.` profile.** The `us.` prefix routes only among US
+regions; `global.` routes worldwide. Chose `us.` for two reasons:
+the workload is US grid telemetry (data-residency conservatism), and
+our deploy region is `us-east-1` so the global profile would offer no
+latency win.
 
 **Alternatives.**
-- **Claude Haiku** — cheaper (~5× less per token), faster. Good for
-  classification but loses some nuance on narrative quality.
+- **Claude Haiku 4.5** — cheaper, faster. Good for classification but
+  loses some nuance on narrative quality. **Worth revisiting in P8.4
+  as a cost optimization** — the pattern would be Sonnet for the
+  narrative node, Haiku for classification + routing nodes (split by
+  task complexity, not by uniform model choice). Captured as a
+  future-state note; not the MVP shape.
+- **Claude Opus 4.5 / 4.6 / 4.7** — flagship tier, higher quality on
+  hard reasoning tasks but ~3-5× the cost of Sonnet. Overkill for
+  threshold-breach narrative generation.
+- **Claude Sonnet 4 / 4.5** — older Sonnet generations still active in
+  Bedrock. Picked the latest because it's both current and uses the
+  cleaner naming convention (no date suffix); easier to defend in
+  interview as "current state" rather than "I locked in a version
+  during the build."
 - **Llama 3.1 70B Instruct** — open-weight, cheaper than Sonnet,
   competitive on many benchmarks. Less polished output.
 - **Amazon Titan Text** — cheapest, AWS-native. Quality ceiling lower
@@ -79,7 +109,7 @@ classification reasoning and narrative generation.
   benchmarks; not relevant since we're committed to Bedrock for the
   JD requirement.
 
-**Why Sonnet.**
+**Why Sonnet (the tier, regardless of generation).**
 - The narrative task *is* the user-facing portion of the alert. Its
   quality is what an operator sees. Worth the marginal token cost.
 - Sonnet is the default-good choice — the model an experienced
@@ -87,13 +117,20 @@ classification reasoning and narrative generation.
   forced something cheaper.
 - Demonstrates familiarity with Bedrock's flagship Anthropic model.
 
-**Cost lens.** Sonnet on Bedrock: $3/MTok input + $15/MTok output. A
-typical breach narrative: ~500 input tokens + ~300 output tokens =
-$0.006 per alert. At 1000 alerts/month = $6/month. Negligible.
+**Cost lens.** Sonnet 4.6 pricing on Bedrock should be verified at
+deploy time against [AWS Bedrock pricing](https://aws.amazon.com/bedrock/pricing/);
+order-of-magnitude estimate carried over from the prior generation
+($3/MTok input + $15/MTok output) puts a typical breach narrative
+(~500 input + ~300 output) at ~$0.006 per alert and ~$6/month at
+1000 alerts/month. Even if the new-generation rates are 50% higher,
+production-volume cost is still negligible. The runaway-cost alarm
+in P8.2 (`BedrockTokens-Runaway`, > 1M tokens / hour → SNS) is the
+real cost guardrail, not the per-token rate.
 
 **Tradeoff accepted.** Sonnet is ~5× more expensive than Haiku. If
 alert volume grew 100× (production scale), worth re-evaluating —
-classification could move to Haiku, narrative could stay Sonnet.
+classification could move to Haiku 4.5, narrative could stay Sonnet
+4.6. Captured for P8.4 review.
 
 ---
 
@@ -257,17 +294,58 @@ machine-parseable.
 
 ---
 
-## P8 pre-flight 7 — IAM scope: minimum-privilege for Bedrock
+## P8 pre-flight 7 — IAM scope: minimum-privilege for Bedrock (inference profile pattern)
 
 **Decision.** Alert handler's IAM role grants `bedrock:InvokeModel` on
-exactly the model ARN we use (`arn:aws:bedrock:us-east-1::foundation-
-model/anthropic.claude-3-5-sonnet-20241022-v2:0`). Not a wildcard.
+**two** ARNs — the inference profile and the underlying foundation
+model — and nothing else. No wildcards.
 
-**Why specific.**
-- Enabling Bedrock on a new account requires explicit model access
-  request. The IAM resource ARN reflects this.
+```
+Effect: Allow
+Action: bedrock:InvokeModel
+Resource:
+  - arn:aws:bedrock:us-east-1:<account>:inference-profile/us.anthropic.claude-sonnet-4-6
+  - arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6
+```
+
+**Why two ARNs.** Invoking an inference profile dispatches to one of N
+underlying foundation-model invocations (the profile chooses the
+region at call time). The principal needs permission on both surfaces
+or the call fails with `AccessDeniedException` mid-dispatch. This is
+the IAM shape AWS docs prescribe for the inference-profile pattern;
+it isn't us being defensive.
+
+**Why the unusual ARN shapes.**
+- **Inference profile ARN includes the account ID** — profiles are
+  per-account resources.
+- **Foundation model ARN has an empty account-id slot** (`::`) — the
+  model itself is AWS-managed, not owned by any caller's account.
+- **Region on the foundation model ARN is `*`** — required so the
+  profile can route the call to whichever US region it picks at
+  invoke time. Restricting to `us-east-1` would break the profile's
+  cross-region failover.
+
+The wildcard region on the foundation-model ARN looks lax at first
+glance; it's actually still least-privilege because the *model ID*
+is pinned. The principal can call this one model in any US region —
+no other models, no other actions.
+
+**Why specific (general principle).**
 - A wildcard `bedrock:*` grant would also allow `CreateModel`,
-  `DeleteModel` etc. Not needed; least privilege.
+  `DeleteModel`, `CreateGuardrail`, etc. Not needed; least privilege.
+- A wildcard `bedrock:Invoke*` would allow invoking *any* foundation
+  model in the account — silently expensive surprise if a future
+  developer drops in `claude-opus-4-7` thinking the IAM grant covers
+  it.
+- The CDK `BEDROCK_MODEL_ID` constant + the IAM ARN derived from it
+  are linked at synth time, so the "what we call" and "what we're
+  allowed to call" can never silently drift.
+
+**Test that locks this down.** A defense-in-depth template assertion
+in `infra/__tests__/alert-workflow-stack.test.ts` walks every IAM
+policy in the synthesized template and asserts that no `bedrock:*`
+action other than `bedrock:InvokeModel` appears anywhere. If a future
+edit accidentally widens the grant, the test fails.
 
 **Cost lens.** No cost difference. Defense in depth.
 

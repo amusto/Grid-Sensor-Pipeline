@@ -68,6 +68,60 @@ describe('AlertWorkflowStack template', () => {
         },
       });
     });
+
+    it('exposes BEDROCK_MODEL_ID env var (P8.1 — single source of truth with the IAM grant)', () => {
+      const template = synth();
+      template.hasResourceProperties('AWS::Lambda::Function', {
+        Environment: {
+          Variables: Match.objectLike({
+            // Holds the inference profile ID (current Sonnet on Bedrock
+            // ships behind cross-region profiles). Var name is unchanged
+            // because InvokeModel's `modelId` parameter accepts either form.
+            BEDROCK_MODEL_ID: 'us.anthropic.claude-sonnet-4-6',
+          }),
+        },
+      });
+    });
+  });
+
+  describe('Bedrock IAM grant (P8.1, phase-08 pre-flight 7)', () => {
+    it('grants bedrock:InvokeModel scoped to BOTH the inference profile and underlying foundation model', () => {
+      const template = synth();
+      template.hasResourceProperties('AWS::IAM::Policy', {
+        PolicyDocument: Match.objectLike({
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Action: 'bedrock:InvokeModel',
+              Effect: 'Allow',
+              // Inference profile ARN includes account-id slot;
+              // foundation-model ARN has empty account slot and `*`
+              // region because the profile routes cross-region.
+              Resource: [
+                'arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6',
+                'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
+              ],
+            }),
+          ]),
+        }),
+      });
+    });
+
+    it('does NOT grant any wildcard bedrock:* permissions', () => {
+      const template = synth();
+      const policies = template.findResources('AWS::IAM::Policy');
+      Object.values(policies).forEach((policy) => {
+        const statements: Array<{ Action?: string | string[] }> =
+          policy.Properties?.PolicyDocument?.Statement ?? [];
+        statements.forEach((s) => {
+          const actions = Array.isArray(s.Action) ? s.Action : [s.Action];
+          actions.forEach((a) => {
+            if (typeof a === 'string' && a.startsWith('bedrock:')) {
+              expect(a).toBe('bedrock:InvokeModel');
+            }
+          });
+        });
+      });
+    });
   });
 
   describe('SNS topic', () => {

@@ -398,28 +398,56 @@ existing `NotifyOps` task — for agentic decisioning.
    [Returns to Step Functions; WaitForAck stays unchanged]
 ```
 
-**Sub-phases & deliverables:**
+**Sub-phases & deliverables (implementation order; de-risk-first):**
 
-- ⬜ **P8.1** LangChain + Bedrock for narratives — replace alert
-  handler's JSON SNS payload with Claude 3.5 Sonnet-generated
-  narrative; LangChain prompt templates and output parsers; fall
-  back to JSON if Bedrock errors
-- ⬜ **P8.2** LangGraph for the agentic flow — multi-node graph
-  (classify → route → narrate); structured state with Zod schema;
-  conditional edges for severity-driven routing
-- ⬜ **P8.3** MCP server exposing query API as MCP tools
-  (`query_sensor_readings`, `query_recent_breaches`,
-  `get_alert_history`); stdio transport for local Claude
-  Desktop/Claude Code clients
-- ⬜ **P8.4** Three new learning notes — `aws-bedrock.md`,
-  `langchain-langgraph.md`, `mcp-protocol.md`; each filled with
-  project anchors + self-test gate. Design-patterns index updated
-- ⬜ **P8.5** Decision log + portfolio-entry update — update
-  `portfolio-entry.md` so its "Bedrock-powered alert narratives" and
-  "MCP server exposing the data API" claims are finally accurate
-- ⬜ **P8.6** Deploy + smoke test — breach simulation produces a
-  Bedrock-generated narrative; MCP server responds to a Claude
-  Desktop / Claude Code natural-language query
+- ⬜ **P8.1** Bedrock model access + IAM scope — verify access to
+  Claude Sonnet 4.6 via the **US cross-region inference profile**
+  `us.anthropic.claude-sonnet-4-6` (current Sonnet on Bedrock ships
+  behind inference profiles, not bare model IDs); add resource-scoped
+  `bedrock:InvokeModel` grant to the alert handler's IAM role in
+  `alert-workflow-stack.ts` covering BOTH the profile ARN and the
+  underlying foundation-model ARN (no wildcards). Synth + diff
+  verified; deploy deferred to P8.5. AWS retired the Model Access
+  page mid-2025 — first-time Anthropic invocation triggers an inline
+  use-case form rather than a multi-day approval queue.
+- ⬜ **P8.2** Client wiring + first unit test + runaway-cost alarm —
+  `src/lib/llm-client.ts` wraps Bedrock via LangChain
+  (`BedrockChat` + `StructuredOutputParser`); cap LangChain max
+  retries at 1-2 to prevent parse-failure spirals; one unit test
+  proving end-to-end "stub event in → typed Zod output." Add
+  `BedrockTokensUsed` EMF metric (input + output tokens summed per
+  invocation) and a `BedrockTokens-Runaway` CloudWatch alarm in
+  `observability-stack.ts` (> 1M tokens in 1 hour → ops-alerts SNS).
+  De-risks 80% of downstream nodes — every later node uses this same
+  plumbing.
+- ⬜ **P8.3** Severity classifier node — first LangGraph node. Inputs:
+  breach event + recent context. Output: Zod-typed
+  `{severity: P0|P1|P2|P3, confidence, reasoning}`. Standalone unit
+  test with prompt fixture matrix.
+- ⬜ **P8.4** Routing strategy node + narrative generator node — same
+  pattern as P8.3, mechanical once plumbing is solid. Output Zod
+  schemas locked.
+- ⬜ **P8.5** LangGraph wire-up + fail-soft fallback + deploy + smoke
+  test — assemble the 3-node LangGraph inside the alert handler;
+  on any node throw, fall back to Phase 5's deterministic JSON
+  payload and increment `BedrockFallback`. Deploy. Trigger a real
+  breach via simulator: verify LLM-generated narrative reaches SNS;
+  force a Bedrock error (bad model ARN env override) and verify
+  fallback fires.
+- ⬜ **P8.6** MCP server with 3 read-only tools — stdio-transport
+  Node script exposing `query_sensor_readings`,
+  `query_recent_breaches`, `get_alert_history`. Local-only;
+  documented JSON config for Claude Desktop / Claude Code.
+  **Cut-line:** if not running by 9pm Day 3, ship as scaffolded +
+  documented and defer wiring to a follow-up.
+
+**Adjacent deliverables (not sub-phase-numbered):**
+- Three learning notes — `aws-bedrock.md`, `langchain-langgraph.md`,
+  `mcp-protocol.md`. Each filled with project anchors + self-test
+  gate. Design-patterns index updated.
+- `portfolio-entry.md` updated so "Bedrock-powered alert narratives"
+  and "MCP server exposing the data API" claims are finally accurate.
+- Phase 8 close-out commit + ROADMAP daily-log entry.
 
 **Acceptance criteria:**
 - Alert handler produces an LLM-generated narrative on breach.
