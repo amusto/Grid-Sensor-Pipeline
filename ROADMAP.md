@@ -15,9 +15,9 @@ elapsed time depends on focus and velocity.
 
 ## Current state
 
-**Today:** Day 3 (2026-05-10)
-**Active phase:** Phase 8 — AI/ML Integration (in progress; 3 of 6 sub-phases shipped)
-**Last shipped:** P8.3 (severity classifier node — first LangGraph node, currently a plain async function; 14 unit tests green; full verification trio confirmed Day 3 evening). P8.1 + P8.2 also shipped Day 3.
+**Today:** Day 4 (2026-05-11)
+**Active phase:** Phase 8 — AI/ML Integration (in progress; 5 of 6 sub-phases shipped; only P8.6 MCP server remaining)
+**Last shipped:** P8.5 — LangGraph wire-up + fail-soft fallback + deploy. `alert-graph.ts` assembles 3 nodes (classify → route → narrate) into a `StateGraph`; alert handler wraps `runAlertGraph()` in try/catch with fail-soft to Phase 5 JSON payload. Deployed end-to-end; **fail-soft path verified in production** (3 breach events fell back cleanly; `BedrockFallback` metric incremented; alerts reached SNS via deterministic payload). Happy-path verification pending Anthropic account-level use-case form approval — code is correct; account-level admin task surfaced at production-shape invocation.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
 ---
@@ -27,9 +27,9 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-Core (P1-P12):     [██████████████░░░░░░] 68%   (46 / 68 sub-phases)
+Core (P1-P12):     [██████████████░░░░░░] 71%   (48 / 68 sub-phases)
 Stretch (P13-P14): [░░░░░░░░░░░░░░░░░░░░]  0%   ( 0 / 10 sub-phases)
-Combined:          [████████████░░░░░░░░] 59%   (46 / 78 sub-phases)
+Combined:          [████████████░░░░░░░░] 62%   (48 / 78 sub-phases)
 ```
 
 > **Core** is the MVP — what reviewers expect to see for the JD scope.
@@ -58,7 +58,7 @@ Combined:          [████████████░░░░░░░░
 | 5 | Alert workflow               | `██████████` | 100% | 6/6 | ✅ |
 | 6 | DLQ + observability          | `██████████` | 100% | 6/6 | ✅ |
 | 7 | Query API                    | `██████████` | 100% | 6/6 | ✅ |
-| 8 | AI/ML Integration            | `█████░░░░░` |  50% | 3/6 | 🚧 |
+| 8 | AI/ML Integration            | `████████░░` |  83% | 5/6 | 🚧 |
 | 9 | Agentic case routing         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
 | 10 | Datadog bridge              | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
 | 11 | Polish & teardown           | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
@@ -453,16 +453,42 @@ existing `NotifyOps` task — for agentic decisioning.
   tiers, error propagation, and 5 schema-bounds tests. **Verification
   to run on resume:** `npm run build` + `npm test -- severity-classifier`
   + `npx cdk synth GridSensorObservabilityStack > /dev/null`.
-- ⬜ **P8.4** Routing strategy node + narrative generator node — same
-  pattern as P8.3, mechanical once plumbing is solid. Output Zod
-  schemas locked.
-- ⬜ **P8.5** LangGraph wire-up + fail-soft fallback + deploy + smoke
-  test — assemble the 3-node LangGraph inside the alert handler;
-  on any node throw, fall back to Phase 5's deterministic JSON
-  payload and increment `BedrockFallback`. Deploy. Trigger a real
-  breach via simulator: verify LLM-generated narrative reaches SNS;
-  force a Bedrock error (bad model ARN env override) and verify
-  fallback fires.
+- ✅ **P8.4** Routing strategy node + narrative generator node — two
+  plain async functions, same shape as P8.3. `src/lib/routing-strategy.ts`
+  exports `determineRouting(event, severity) → RoutingPlan` with an
+  inline `BASELINE_MATRIX` (P0/P1/P2/P3 → channels + page) and a Zod
+  refinement enforcing `overrideApplied ⇒ overrideReason` for audit.
+  `src/lib/narrative-generator.ts` exports `generateNarratives(event,
+  severity, routing) → Narratives` — single LLM call producing
+  per-channel narratives (slack ≤280 chars, pagerduty ≤400, email
+  ≤1200, status_page ≤600); schema-level length bounds double as a
+  cost lever. ~33 unit tests across the two new files: tier-mapping
+  fixture matrices, override-path tests, schema/messages contracts,
+  prompt-content assertions, schema bounds, BASELINE_MATRIX integrity.
+  Verification trio (build + tests + synth) green Day 4 morning.
+- ✅ **P8.5** LangGraph wire-up + fail-soft fallback + deploy +
+  fail-soft smoke test. `src/lib/alert-graph.ts` assembles three
+  nodes (classify → route → narrate) into a `StateGraph` with
+  lazy-singleton compiled-graph caching, replace-semantics state
+  fields, and defensive node-wiring assertions. Exports
+  `runAlertGraph(event) → AlertGraphState`. `src/handlers/alert-handler.ts`
+  invokes the graph inside a try/catch; success path emits an
+  enriched SNS payload with LLM tier classification + per-channel
+  narratives + routing decision; failure path increments
+  `BedrockFallback` and emits the Phase 5 deterministic JSON payload
+  so the alert always reaches SNS. 13 unit tests across
+  `alert-graph.test.ts` and `alert-handler.test.ts`. Deployed —
+  Lambda bundle jumped from 93 KB to 1.0 MB (LangChain footprint;
+  predicted); cold-start `Init Duration: 541-587 ms`, well within
+  budget. **Fail-soft path verified in production** via 3 concurrent
+  breach events: `BedrockFallback` metric incremented twice (EMF
+  batched `[1,1]`); all three alerts reached SNS via the
+  deterministic payload; `usedFallback: true` logged for each.
+  **Happy-path verification pending Anthropic account-level use-case
+  form approval** — error surfaced was `"Model use case details have
+  not been submitted for this account"`. Not a code defect; surfaced
+  only at production-shape invocation rather than the day-prior CLI
+  test. Captured as a deploy lesson in `phase-08-ai-ml-integration.md`.
 - ⬜ **P8.6** MCP server with 3 read-only tools — stdio-transport
   Node script exposing `query_sensor_readings`,
   `query_recent_breaches`, `get_alert_history`. Local-only;

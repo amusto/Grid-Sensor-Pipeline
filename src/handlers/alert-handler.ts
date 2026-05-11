@@ -2,12 +2,28 @@
  * Alert handler — notification + escalation Lambda.
  *
  * Invoked by Step Functions twice in a typical workflow:
- *   1. `NotifyOps`           — initial P2 notification on threshold breach.
- *   2. `EscalateToOnCall`    — P1 escalation if no ack within the wait window.
+ *   1. `NotifyOps`           — initial notification on threshold breach.
+ *   2. `EscalateToOnCall`    — escalation if no ack within the wait window.
  *
  * Both invocations route through the same handler; differentiation is by
  * the `escalated: true` flag on the input. See
  * `docs/decisions/phase-05-alert-workflow.md` for the rationale.
+ *
+ * **P8.5 change — LangGraph-powered narrative path with fail-soft fallback.**
+ *
+ * The handler now invokes a three-node LangGraph
+ * (`src/lib/alert-graph.ts`) that:
+ *   1. Classifies severity (P0/P1/P2/P3) via Bedrock.
+ *   2. Determines routing (which channels + page-on-call).
+ *   3. Generates per-channel narratives.
+ *
+ * The graph output enriches the SNS payload with LLM-generated content
+ * for downstream consumers. **If any node throws** (Bedrock outage,
+ * parse failure, schema violation), the handler emits a
+ * `BedrockFallback` metric and falls back to the Phase 5 deterministic
+ * JSON payload — the alert ALWAYS reaches SNS. AI-generated content
+ * is best-effort, never load-bearing. See
+ * `docs/decisions/phase-08-ai-ml-integration.md` pre-flight 6.
  */
 
 import type { Context } from 'aws-lambda';
@@ -17,6 +33,7 @@ import { logger } from '../lib/logger';
 import { metrics } from '../lib/metrics';
 import { evaluateThreshold } from '../lib/threshold';
 import { validateSensorEvent } from '../lib/validator';
+import { runAlertGraph, type AlertGraphState } from '../lib/alert-graph';
 import type { SensorEvent } from '../lib/types';
 
 interface AlertEvent {
@@ -57,6 +74,63 @@ const extractSourceEvent = (event: AlertEvent): unknown => {
   return event;
 };
 
+/**
+ * Build the deterministic fallback SNS payload — the Phase 5 shape.
+ * Used both when the LangGraph hasn't been invoked (escalation path,
+ * which currently doesn't re-run the graph) and when the LangGraph
+ * fails and the handler falls back.
+ */
+const buildFallbackPayload = (
+  validated: SensorEvent,
+  evaluation: ReturnType<typeof evaluateThreshold>,
+  isEscalated: boolean,
+) => {
+  const tier = isEscalated ? 'P1' : 'P2';
+  return {
+    severity: tier,
+    sensorId: validated.sensorId,
+    timestamp: validated.timestamp,
+    readingType: validated.readingType,
+    value: validated.value,
+    unit: validated.unit,
+    gridZone: validated.gridZone,
+    threshold: evaluation.threshold,
+    details: evaluation.details,
+    escalated: isEscalated,
+    // No narratives field — caller (Slack / Email / etc.) renders from
+    // the structured fields directly. Same shape as Phase 5.
+  };
+};
+
+/**
+ * Build the enriched SNS payload from a successful LangGraph run.
+ * Includes the LLM-generated narratives alongside the structured fields
+ * so downstream consumers can use either shape.
+ */
+const buildEnrichedPayload = (
+  validated: SensorEvent,
+  evaluation: ReturnType<typeof evaluateThreshold>,
+  graphResult: AlertGraphState,
+  isEscalated: boolean,
+) => {
+  return {
+    severity: graphResult.severity.severity, // LLM-classified tier (P0-P3)
+    severityConfidence: graphResult.severity.confidence,
+    severityReasoning: graphResult.severity.reasoning,
+    sensorId: validated.sensorId,
+    timestamp: validated.timestamp,
+    readingType: validated.readingType,
+    value: validated.value,
+    unit: validated.unit,
+    gridZone: validated.gridZone,
+    threshold: evaluation.threshold,
+    details: evaluation.details,
+    escalated: isEscalated,
+    routing: graphResult.routing,
+    narratives: graphResult.narratives.narratives,
+  };
+};
+
 export const handler = async (
   event: AlertEvent,
   _context: Context,
@@ -77,26 +151,64 @@ export const handler = async (
     }
 
     const evaluation = evaluateThreshold(validated);
-    const severity = isEscalated ? 'P1' : 'P2';
-    const subjectPrefix = isEscalated ? '[P1 ESCALATED]' : '[P2]';
 
+    // -------------------------------------------------------------------
+    // LangGraph path with fail-soft fallback (P8.5).
+    //
+    // Run the 3-node LangGraph on the INITIAL notification only. The
+    // escalation invocation reuses the original notification's payload
+    // shape (re-running the graph for an escalation would double the
+    // Bedrock cost and the narratives would be near-identical; the
+    // escalation Lambda's job is to mark severity escalated + republish,
+    // not re-decide).
+    //
+    // On any failure inside the graph: emit BedrockFallback, log, and
+    // continue with the deterministic Phase 5 payload. The alert MUST
+    // reach SNS even if Bedrock is down.
+    // -------------------------------------------------------------------
+    let payload: ReturnType<typeof buildFallbackPayload>
+      | ReturnType<typeof buildEnrichedPayload>;
+    let usedFallback = false;
+
+    if (!isEscalated) {
+      try {
+        const graphResult = await runAlertGraph(validated);
+        payload = buildEnrichedPayload(
+          validated,
+          evaluation,
+          graphResult,
+          isEscalated,
+        );
+        logger.info('Alert enriched via LangGraph', {
+          sensorId: validated.sensorId,
+          severityTier: graphResult.severity.severity,
+          severityConfidence: graphResult.severity.confidence,
+          channelsSelected: Object.entries(graphResult.routing.channels)
+            .filter(([, selected]) => selected)
+            .map(([name]) => name),
+          overrideApplied: graphResult.routing.overrideApplied,
+        });
+      } catch (err) {
+        metrics.addMetric('BedrockFallback', MetricUnit.Count, 1);
+        usedFallback = true;
+        logger.error(
+          'LangGraph alert flow failed; falling back to deterministic payload',
+          {
+            error: err instanceof Error ? err.message : String(err),
+            sensorId: validated.sensorId,
+          },
+        );
+        payload = buildFallbackPayload(validated, evaluation, isEscalated);
+      }
+    } else {
+      // Escalation: reuse the deterministic payload, mark escalated.
+      payload = buildFallbackPayload(validated, evaluation, isEscalated);
+    }
+
+    const subjectPrefix = isEscalated
+      ? '[P1 ESCALATED]'
+      : `[${'severity' in payload ? payload.severity : 'P2'}]`;
     const subject = `${subjectPrefix} Grid sensor breach: ${validated.sensorId}`;
-    const messageBody = JSON.stringify(
-      {
-        severity,
-        sensorId: validated.sensorId,
-        timestamp: validated.timestamp,
-        readingType: validated.readingType,
-        value: validated.value,
-        unit: validated.unit,
-        gridZone: validated.gridZone,
-        threshold: evaluation.threshold,
-        details: evaluation.details,
-        escalated: isEscalated,
-      },
-      null,
-      2,
-    );
 
     await sns.send(
       new PublishCommand({
@@ -104,7 +216,7 @@ export const handler = async (
         // Subject is restricted to ASCII printable + a few extras and
         // <= 100 chars; sensorId is short enough that this is safe.
         Subject: subject.slice(0, 100),
-        Message: messageBody,
+        Message: JSON.stringify(payload, null, 2),
       }),
     );
 
@@ -117,11 +229,11 @@ export const handler = async (
     );
 
     logger.info(isEscalated ? 'Alert escalated' : 'Alert notified', {
-      severity,
       sensorId: validated.sensorId,
       readingType: validated.readingType,
       value: validated.value,
       thresholdBreached: evaluation.exceeded,
+      usedFallback,
     });
 
     return { acknowledged: false, escalated: isEscalated };

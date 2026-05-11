@@ -298,6 +298,100 @@ anchors a human expert would use.**
 
 ---
 
+## Interview-defensible framing (60-second answer)
+
+When asked "tell me about your LangChain + LangGraph experience" or
+"why this stack for your project," the answer below hits the layering,
+the pattern, the tradeoff, and the composition rationale in one
+breath:
+
+> "LangGraph is a state machine framework optimized for LLM-orchestrated
+> workflows. Three primitives: a typed state object with per-field
+> reducers, async node functions that read state and return partial
+> updates, and edges — static or conditional — that route between
+> nodes.
+>
+> In the grid-sensor pipeline, I use it inside the alert handler
+> Lambda for a three-node agentic flow: severity classification,
+> routing decision, narrative generation. Each node is a plain async
+> function that wraps a call to a Zod-typed LLM invocation through
+> LangChain's `ChatBedrockConverse` + `withStructuredOutput`. The
+> graph is compiled once at module load and invoked per breach.
+>
+> The reason it's LangGraph and not a hand-rolled async chain is
+> anticipatory — the next phase adds conditional branching (severity-
+> driven routing variations) and tool-execution nodes where graph
+> semantics pay off operationally. For three linear nodes a hand-rolled
+> chain would be equivalent; I'm establishing the pattern at the right
+> layer rather than retrofitting later.
+>
+> The clean separation is: Step Functions is the durable outer workflow
+> (90-day audit, 15-minute Wait state, AWS-managed); LangGraph is the
+> agentic inner flow (in-process, ephemeral, sub-second per node). Each
+> at the layer where its primitives are strongest. Composition over
+> replacement."
+
+Three signals this answer is sending:
+
+1. **Names the primitives at the right level of abstraction** —
+   state / nodes / edges, not "I called `addNode` in a loop." Shows
+   you understand the conceptual shape, which generalizes beyond
+   LangGraph.
+2. **Owns the tradeoff** — "For three linear nodes a hand-rolled
+   chain would be equivalent" is exactly the kind of honesty that
+   distinguishes Staff-level engineers from candidates pattern-
+   matching to keywords. The interviewer hears: *this person picks
+   tools deliberately*.
+3. **Connects two technologies via the composition story** — Step
+   Functions outer + LangGraph inner is a memorable architectural
+   shape. It positions the candidate as someone who reaches for
+   composition over replacement, which is itself a Staff-level signal.
+
+### Follow-up probes to be ready for
+
+- *"Why not put all three LLM calls inside Step Functions as separate
+  task states?"* → Cost (each state transition is billable; in-Lambda
+  is free), latency (state transitions are 20-50 ms each), and audit
+  granularity (Step Functions logs *what*; LangGraph logs *how*).
+  Two layers at the right granularity.
+- *"What happens when a node fails?"* → Per-node retry (we cap at 1 in
+  the LangChain client for cost), the LangChain client emits a
+  `BedrockFallback` metric, and the alert handler's outer try/catch
+  routes to Phase 5's deterministic JSON payload. The alert *always*
+  reaches SNS — Bedrock failure is degraded quality, not blocked
+  notification.
+- *"How would you scale this to a 10-node graph?"* → Conditional edges
+  carry their own weight only when you have branching. Channels
+  (per-field reducers) become non-trivial when you have parallel
+  nodes or loops. The architecture I'd reach for at that scale is
+  *parallel fan-out for independent enrichments* (e.g., severity +
+  context-fetch + threshold-lookup running concurrently), with a
+  joining node that consolidates state. LangGraph handles this via
+  `Send` API and channel reducers — but for our current shape,
+  linear is correct.
+- *"What's the operational risk of LangGraph in Lambda?"* → Bundle
+  size jump (~400-600 KB after minification) and the cold-start
+  latency that comes with it. Worth measuring at deploy and noting
+  in the deploy lesson if it regresses materially. Memory and
+  module-init overhead are the costs to watch.
+
+### When to NOT lead with this framing
+
+If the interviewer is more interested in Bedrock specifically (rather
+than orchestration), pivot to:
+
+- The Converse-API-vs-legacy-invoke distinction (`ChatBedrockConverse`
+  abstracts model-family request bodies; `BedrockChat` doesn't).
+- The inference-profile pattern for current-gen Anthropic models
+  (`us.anthropic.claude-sonnet-4-6`, not bare foundation-model id).
+- The cost-guardrails-at-three-time-horizons pattern (per-call retry
+  cap + per-window aggregate alarm + per-output schema bounds).
+
+Each of those is a 60-second answer in its own right; pick the one
+that matches the question.
+
+---
+
 ## Did I actually learn this?
 
 Self-test gates — close the file and try to answer these from
