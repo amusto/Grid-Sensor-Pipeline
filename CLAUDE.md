@@ -66,7 +66,11 @@ grid-sensor-pipeline/
 │       ├── query-stack.ts            # API Gateway + query Lambda
 │       └── observability-stack.ts   # CloudWatch Dashboard + Alarms + SNS
 ├── scripts/
-│   └── simulate.ts               # Invoke simulator Lambda N times with synthetic data
+│   ├── simulate.ts               # Invoke simulator Lambda N times with synthetic data
+│   └── post-destroy-check.sh     # Verify Kinesis orphan didn't survive `cdk destroy`
+├── mcp-server/
+│   ├── server.ts                 # P8.6: stdio MCP server with 3 read-only tools
+│   └── README.md                 # Claude Desktop / Code config + setup guide
 ├── CLAUDE.md
 ├── cdk.json
 ├── tsconfig.json

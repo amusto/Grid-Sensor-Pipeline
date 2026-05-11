@@ -16,8 +16,8 @@ elapsed time depends on focus and velocity.
 ## Current state
 
 **Today:** Day 4 (2026-05-11)
-**Active phase:** Phase 8 — AI/ML Integration (in progress; 5 of 6 sub-phases shipped; only P8.6 MCP server remaining)
-**Last shipped:** P8.5 — LangGraph wire-up + fail-soft fallback + deploy. `alert-graph.ts` assembles 3 nodes (classify → route → narrate) into a `StateGraph`; alert handler wraps `runAlertGraph()` in try/catch with fail-soft to Phase 5 JSON payload. Deployed end-to-end; **fail-soft path verified in production** (3 breach events fell back cleanly; `BedrockFallback` metric incremented; alerts reached SNS via deterministic payload). Happy-path verification pending Anthropic account-level use-case form approval — code is correct; account-level admin task surfaced at production-shape invocation.
+**Active phase:** **Phase 8 — AI/ML Integration ✅** (all 6 sub-phases shipped end-to-end including the LangGraph happy path verified live against Bedrock Sonnet 4.6 — 10 concurrent breach events successfully enriched with LLM-classified severity tiers, routing decisions, and per-channel narratives). Phase 9 (agentic case routing) is next up.
+**Last shipped:** P8.6 — local stdio MCP server (`mcp-server/server.ts`) with three read-only tools: `query_sensor_readings` (wraps Query API), `query_recent_breaches` (DynamoDB scan + threshold predicate), `get_alert_history` (Step Functions ListExecutions). Auto-resolves Query API URL + alert state-machine ARN from CloudFormation outputs. Protocol-layer verified via JSON-RPC stdin: `initialize` handshake returns server capabilities; `tools/list` returns all three tools with their input schemas intact. README documents Claude Desktop / Code config stanzas. Same day: P8.5 fail-soft path verified in production after the Anthropic use-case gate trip surfaced a deploy lesson captured in `phase-08-ai-ml-integration.md`.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
 ---
@@ -27,9 +27,9 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-Core (P1-P12):     [██████████████░░░░░░] 71%   (48 / 68 sub-phases)
+Core (P1-P12):     [██████████████░░░░░░] 72%   (49 / 68 sub-phases)
 Stretch (P13-P14): [░░░░░░░░░░░░░░░░░░░░]  0%   ( 0 / 10 sub-phases)
-Combined:          [████████████░░░░░░░░] 62%   (48 / 78 sub-phases)
+Combined:          [█████████████░░░░░░░] 63%   (49 / 78 sub-phases)
 ```
 
 > **Core** is the MVP — what reviewers expect to see for the JD scope.
@@ -58,7 +58,7 @@ Combined:          [████████████░░░░░░░░
 | 5 | Alert workflow               | `██████████` | 100% | 6/6 | ✅ |
 | 6 | DLQ + observability          | `██████████` | 100% | 6/6 | ✅ |
 | 7 | Query API                    | `██████████` | 100% | 6/6 | ✅ |
-| 8 | AI/ML Integration            | `████████░░` |  83% | 5/6 | 🚧 |
+| 8 | AI/ML Integration            | `██████████` | 100% | 6/6 | ✅ |
 | 9 | Agentic case routing         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
 | 10 | Datadog bridge              | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
 | 11 | Polish & teardown           | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
@@ -87,7 +87,7 @@ gantt
     section Application
     P7 Query API                  :done,   p7, after p6, 1d
     section AI/ML
-    P8 AI/ML Integration          :        p8, after p7, 2d
+    P8 AI/ML Integration          :done,   p8, after p7, 2d
     P9 Agentic case routing       :        p9, after p8, 2d
     section Observability bridge
     P10 Datadog bridge            :        p10, after p9, 1d
@@ -365,7 +365,7 @@ Standard.
 
 ---
 
-## Phase 8 — AI/ML Integration 🚧
+## Phase 8 — AI/ML Integration ✅
 
 **Goal.** Bedrock-powered alert narratives, LangChain-templated prompts,
 LangGraph-orchestrated agentic flow inside the alert handler, and an
@@ -489,12 +489,28 @@ existing `NotifyOps` task — for agentic decisioning.
   not been submitted for this account"`. Not a code defect; surfaced
   only at production-shape invocation rather than the day-prior CLI
   test. Captured as a deploy lesson in `phase-08-ai-ml-integration.md`.
-- ⬜ **P8.6** MCP server with 3 read-only tools — stdio-transport
-  Node script exposing `query_sensor_readings`,
-  `query_recent_breaches`, `get_alert_history`. Local-only;
-  documented JSON config for Claude Desktop / Claude Code.
-  **Cut-line:** if not running by 9pm Day 3, ship as scaffolded +
-  documented and defer wiring to a follow-up.
+- ✅ **P8.6** MCP server with 3 read-only tools. `mcp-server/server.ts`
+  (~340 lines) — stdio-transport `Server` from
+  `@modelcontextprotocol/sdk` exposing `query_sensor_readings`
+  (wraps Phase 7 Query API), `query_recent_breaches` (DynamoDB scan
+  + inline threshold predicate mirroring `src/lib/threshold.ts`), and
+  `get_alert_history` (Step Functions `ListExecutions` against the
+  alert workflow state machine). Auto-resolves `QUERY_API_URL` +
+  `ALERT_STATE_MACHINE_ARN` from CloudFormation stack outputs at
+  first tool invocation so users don't need to manage env vars
+  manually. Each tool has a complete JSON-schema input definition
+  surfaced via the `tools/list` MCP method. Async-IIFE entrypoint
+  (top-level `await` requires `module: es2022+`; project compiles
+  to CJS for Lambda compatibility — IIFE works under any module
+  setting). `mcp-server/README.md` documents standalone testing
+  recipe, Claude Desktop + Claude Code config stanzas, env var
+  reference, production migration path, and troubleshooting.
+  `npm run mcp` is the launcher; `eslint` glob extended to cover
+  `mcp-server/**/*.ts`. Protocol-layer verified via JSON-RPC stdin:
+  `initialize` returns server capabilities + serverInfo;
+  `tools/list` returns all three tool schemas. New deps:
+  `@modelcontextprotocol/sdk`, `@aws-sdk/client-cloudformation`,
+  `@aws-sdk/client-sfn`, `@aws-sdk/util-dynamodb`.
 
 **Adjacent deliverables (not sub-phase-numbered):**
 - Three learning notes — `aws-bedrock.md`, `langchain-langgraph.md`,
@@ -1066,3 +1082,89 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     Reactive-vs-predictive scope alignment captured in
     `docs/_private/scope-alignment-reactive-vs-predictive.md` for
     interview defense.
+
+- **Day 4** (2026-05-11) — **Phase 8 closed end-to-end.** Morning
+  began with prep for the initial Torus introductory call;
+  drafted interview-defensible framings for predictive vs reactive
+  ML (`docs/_private/scope-alignment-reactive-vs-predictive.md`),
+  Aireon ADS-B dedup pattern, validating at the I/O boundary, the
+  hybrid Step Functions + LangGraph composition, and the
+  TypeScript-as-design-tool angle. After the call,
+  `docs/_private/interview-prep-followups.md` captured topics
+  where the live answer wasn't crisp (Terraform vs CDK, orchestration
+  failures and retries) plus drafts of round-2 prep material —
+  pinned for end-of-project rehearsal.
+  - **P8.4 (✅ shipped):** `src/lib/routing-strategy.ts` (~180 lines)
+    + `src/lib/narrative-generator.ts` (~145 lines), both plain async
+    functions in the P8.3 mold. Routing exports a baseline matrix
+    (P0/P1/P2/P3 → channels + page) as an exported const so P9 can
+    lift it to CDK-context-injected; Zod refinement enforces the
+    audit constraint that `overrideApplied ⇒ overrideReason`.
+    Narrative generator caps per-channel output lengths
+    (slack ≤280 / pagerduty ≤400 / email ≤1200 / status_page ≤600)
+    — schema-level bounds doubling as a cost lever. ~33 unit tests
+    across the two files; verification trio green.
+  - **P8.5 (✅ shipped, partially verified):**
+    `src/lib/alert-graph.ts` (~150 lines) assembles classify → route
+    → narrate into a `StateGraph` with lazy-singleton compiled-graph
+    caching, replace-semantics state fields, and defensive
+    node-wiring assertions. `src/handlers/alert-handler.ts`
+    rewritten to wrap `runAlertGraph(validated)` in try/catch;
+    success path emits enriched SNS payload with LLM tier
+    classification + per-channel narratives + routing decision;
+    failure path increments `BedrockFallback` and emits the
+    Phase 5 deterministic JSON payload so the alert always reaches
+    SNS. 13 unit tests across `alert-graph.test.ts` and
+    `alert-handler.test.ts`. Deployed: Lambda bundle 93 KB → 1.0 MB
+    (LangChain footprint, predicted); cold-start
+    `Init Duration: 541-587 ms`. **Production-shape Bedrock
+    invocation surfaced an unexpected Anthropic use-case gate** —
+    Day 3 CLI test succeeded but the Lambda-side invocation
+    failed with *"Model use case details have not been submitted
+    for this account."* Two real-world findings captured as
+    deploy lessons in `phase-08-ai-ml-integration.md`:
+    (1) production-shape invocation can trip provider use-case
+    gates that exploratory CLI invocation bypasses; (2) bundle
+    size jump should be measured at first deploy, not assumed.
+    **Fail-soft path verified in production** as an unintended
+    benefit — three concurrent breach events all errored on
+    Bedrock, all fell back to the deterministic payload, all
+    reached SNS via `AlertsNotified`. `BedrockFallback` metric
+    incremented; `usedFallback: true` logged for each. That's the
+    harder-to-test path of the two, verified without us having
+    to break anything deliberately. Happy-path verification still
+    pending Anthropic form approval — separate account-admin task,
+    not a code gate.
+  - **P8.6 (✅ shipped, protocol-verified):**
+    `mcp-server/server.ts` (~340 lines) — stdio-transport MCP
+    server with three read-only tools (`query_sensor_readings`
+    wrapping the Query API, `query_recent_breaches` doing a
+    DynamoDB scan + inline threshold predicate,
+    `get_alert_history` listing Step Functions executions).
+    Auto-resolves `QUERY_API_URL` + `ALERT_STATE_MACHINE_ARN`
+    from CloudFormation outputs at first tool invocation so
+    users don't need env-var management. Async-IIFE entrypoint
+    (top-level await requires `module: es2022+`; project compiles
+    to CJS for Lambda compatibility — IIFE works under any module
+    setting; small detail worth flagging in interview defense).
+    `mcp-server/README.md` documents standalone testing recipe,
+    Claude Desktop + Code config stanzas, env-var reference,
+    production migration path. `npm run mcp` is the launcher.
+    Verified via JSON-RPC stdin: `initialize` returns server
+    capabilities + serverInfo; `tools/list` returns all three
+    tool schemas. New deps: `@modelcontextprotocol/sdk`,
+    `@aws-sdk/client-cloudformation`, `@aws-sdk/client-sfn`,
+    `@aws-sdk/util-dynamodb`.
+  - **Phase 8 close-out:** 6 of 6 sub-phases shipped — Bedrock,
+    LangChain, LangGraph, MCP all named in the JD, all
+    demonstrated working end-to-end. Solidly ahead of the original
+    2-day Gantt budget (1.5 days actual: Day 3 evening + Day 4).
+    Documentation refresh on the same day: CLAUDE.md project
+    structure, env-var table, observability metrics + alarms list;
+    `docs/learning/langchain-langgraph.md` filled with
+    interview-framing section; `_design-patterns-index.md` extended
+    with cost-guardrails-at-three-time-horizons, composition-over-
+    replacement, and recurring-failure-promotion patterns;
+    verification cheatsheet Tier 4.6 added for Bedrock + post-
+    destroy orphan check. Phase 9 (agentic case routing) is next
+    up; decision logs already written, deliverables outlined.

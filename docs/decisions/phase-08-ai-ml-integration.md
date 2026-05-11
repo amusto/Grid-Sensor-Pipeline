@@ -351,6 +351,123 @@ edit accidentally widens the grant, the test fails.
 
 ---
 
+## Deploy lessons — real-world snags captured at production-shape invocation
+
+> Captured from the actual P8.5 deploy on Day 4. Each is a defensible
+> interview talking point about Bedrock production-flow gotchas that
+> aren't obvious from the AWS docs alone but surface immediately when
+> real Lambda invocations hit the API.
+
+### 1. Production-shape invocation surfaces use-case gates that exploratory invocation may bypass
+
+**What happened.** Day 3 morning, an `aws bedrock-runtime invoke-model`
+CLI test from the user's own IAM credentials succeeded — returned a
+real Claude Sonnet 4.6 response. That looked like full account-wide
+approval.
+
+Day 4 afternoon, after P8.5 deployed and the simulator drove three
+concurrent breaches into the alert handler Lambda, every Bedrock
+invocation failed with:
+
+```
+Model use case details have not been submitted for this account.
+Fill out the Anthropic use case details form before using the model.
+If you have already filled out the form, try again in 15 minutes.
+```
+
+The IAM grant on the alert handler's role was correct (verified via
+`aws iam get-role-policy` post-deploy). The model ID was correct
+(invocable by the same user from CLI). What failed wasn't IAM and
+wasn't model identification — it was **Anthropic's account-level
+use-case gate**.
+
+**Why CLI succeeded but Lambda failed.** Two plausible mechanisms,
+neither documented clearly by AWS:
+
+1. **First-call grace** — exploratory CLI invocations may get one
+   pass before the formal gate kicks in. Production-shape repeated
+   invocation triggers the formal review.
+2. **Asynchronous review window** — the use-case form may have been
+   auto-submitted on first CLI invocation but not yet approved by the
+   time the Lambda fired hours later. The error's own hint —
+   *"try again in 15 minutes"* — points at this.
+
+Either way, the operational signal is: **a one-off CLI success is
+not a guarantee that production-shape calls will succeed.** Anthropic
+treats them differently.
+
+**Fix.** In the Bedrock console, find and submit the Anthropic
+use-case details form explicitly. The form is the same one we'd have
+filled out in the old (pre-2025) Model Access flow:
+
+- Industry: energy / IoT
+- Use case: internal IoT sensor anomaly narratives
+- Geography: US
+- End users exposed to model output: no
+- High-risk use cases (PII, decisions about people): no
+
+Approval is typically minutes to a few hours for non-suspicious use
+cases. Once approved, the next Lambda invocation succeeds and the
+LangGraph happy path is live.
+
+**The fail-soft path is what proved itself first.** Because the alert
+handler wraps the LangGraph in try/catch with a deterministic-payload
+fallback (per pre-flight 6), all three failed Bedrock invocations
+still resulted in successful SNS notifications. `BedrockFallback`
+metric incremented; `AlertsNotified` metric incremented; alerts
+reached operators via the structured Phase 5 shape. **The hardest
+path to test — fail-soft under real Bedrock failure — was verified
+without us having to break anything deliberately.**
+
+**Pattern lesson — adopt this as a default operational habit:**
+
+> When wiring a managed model service into production code, submit
+> the provider's use-case forms *before* the first production-shape
+> invocation, not after. CLI exploratory testing is not a proxy for
+> production-shape readiness. Plan for the gate to surface at deploy
+> time, not at CLI test time.
+
+**Recurrence prevention.** Document this gate alongside the IAM
+grant in the alert workflow stack's CDK file (cross-reference the
+Bedrock console form URL in a comment). Anyone redeploying the
+project from scratch in a new AWS account will hit this gate and
+needs the breadcrumb.
+
+**Cost lens.** Form submission is free. The cost of *not* submitting
+proactively is one to several hours of deploy delay between the
+failed-Bedrock observation and the eventual approval — fine for a
+POC, expensive for a production rollout where alerts may be queueing.
+
+### 2. LangChain bundle is ~11× larger than the bare alert handler — measure cold-start before assuming it's fine
+
+**What happened.** Pre-P8.5, the alert handler bundle was 93 KB
+minified. Post-P8.5 (after importing `@langchain/core`,
+`@langchain/aws`, and `@langchain/langgraph`), the bundle is 1.0 MB
+minified. esbuild handled the bundling cleanly via the existing CJS
+config — no errors, no warnings beyond CDK's informational "FYI this
+is over 1MB" notice.
+
+**Cold-start impact.** First-deploy invocations measured
+`Init Duration: 541-587 ms` across three concurrent invocations.
+That's well within reason (Lambda's 30-second default timeout leaves
+plenty of headroom), but it is a measurable jump from the pre-P8.5
+~150 ms cold start.
+
+**Pattern lesson.** **The first cold start after a meaningful
+dependency change is the moment to measure cold-start latency — not
+the moment to assume it's fine.** Capture the number in the
+ROADMAP daily log. If it ever regresses materially (~2× current
+or beyond) on a future dependency bump, that's a deploy lesson in
+its own right.
+
+**Cost lens.** Cold start is billed wall-clock duration; the
+init-duration increase from ~150 ms to ~550 ms adds ~400 ms of
+billed time per cold container. At realistic alert volume (a few
+per hour), the lifetime cost difference is fractional cents per
+month. Not a concern; just worth measuring.
+
+---
+
 ## Cross-cutting framing for Phase 8
 
 Three durable patterns this phase encodes:
