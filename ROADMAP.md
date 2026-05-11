@@ -875,7 +875,7 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
   PagerDuty/status-page tools + one real SES email channel +
   idempotency-aware case persistence). Both decision logs written
   with cost lens. Old P8-P12 renumbered to P10-P14. JD saved to
-  `docs/_private/job-description-torus.md` (gitignored). Honest
+  a gitignored note under `docs/_private/`. Honest
   scope accounting: progress drops from 59% to 50% as denominator
   grows from 66 to 78 sub-phases. Architecture decision worth
   highlighting: Phase 8 uses **hybrid Step Functions + LangGraph**
@@ -1084,7 +1084,7 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     interview defense.
 
 - **Day 4** (2026-05-11) — **Phase 8 closed end-to-end.** Morning
-  began with prep for the initial Torus introductory call;
+  began with prep for an initial introductory interview call;
   drafted interview-defensible framings for predictive vs reactive
   ML (`docs/_private/scope-alignment-reactive-vs-predictive.md`),
   Aireon ADS-B dedup pattern, validating at the I/O boundary, the
