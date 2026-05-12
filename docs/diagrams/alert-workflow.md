@@ -2,14 +2,13 @@
 
 > [ ↩ Back to System Overview ](./system-overview.md)
 
-> **[ FILL IN — 2-3 sentences in your voice. Suggested direction:
-> "The alert workflow is a Step Functions Standard Workflow — five
+> The alert workflow is a Step Functions Standard Workflow — five
 > states, three of which do real work, two that are routing/terminal.
 > Standard mode (not Express) because we need a 15-minute Wait state
 > and 90-day audit history for safety-critical grid alerts.
 > Architecturally interesting: state grows through the workflow, and a
 > shape mismatch between Step Functions' resultPath and the alert
-> handler's strict validator created issue #1." ]**
+> handler's strict validator created issue #1.
 
 ## State machine
 
@@ -52,8 +51,6 @@ flowchart TD
 
 ## What's interesting about this view
 
-> **[ FILL IN — 3-5 sentences. Suggested angles:
->
 > - **Why Standard, not Express.** Express can't do a 15-minute Wait
 >   (max 5) and only retains 1 hour of history. Standard gives free
 >   Wait + 90-day audit at ~10× the per-execution cost. The cost framing
@@ -72,7 +69,7 @@ flowchart TD
 >   `.strict()` Zod validator rejected the unknown key on the escalation
 >   invocation. Bug lived at the integration point between two correctly-
 >   configured systems. Fixed by explicit allowlist projection in
->   `extractSourceEvent`. ]**
+>   `extractSourceEvent`.
 
 ## Related
 

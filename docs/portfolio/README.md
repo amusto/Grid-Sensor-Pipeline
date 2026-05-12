@@ -66,14 +66,15 @@ child of `<div className="proj-grid">`.
 The previous hero (Roadmap Tracker) drops to a regular project card
 below, or wherever you want it.
 
-### 4. Fill in the two prose placeholders
+### 4. Rewrite the two prose paragraphs in your voice
 
-The `card.jsx` snippet has two `{/* [ FILL IN ... ] */}` placeholders.
-**Write the prose in your voice.** Recommended angles for each are
-already documented inline in `card.jsx`. Keep both paragraphs short —
+The `card.jsx` snippet ships with initial example prose for both
+paragraphs — enough to render coherently if you paste and deploy
+without changes, but it should be **overwritten in your own voice**
+before the card is left live for long. Keep both paragraphs short —
 2-3 sentences each.
 
-This is the *knowledge-anchor* step. Don't have Claude write these
+This is the *knowledge-anchor* step. Don't have Claude rewrite these
 for you wholesale. The voice should match the existing Roadmap Tracker
 card's cadence.
 

@@ -2,13 +2,12 @@
 
 > [ ↩ Back to System Overview ](./system-overview.md)
 
-> **[ FILL IN — 2-3 sentences in your voice. Suggested direction:
-> "The path every sensor reading takes from the device to durable
+> The path every sensor reading takes from the device to durable
 > storage. This is the high-volume side of the pipeline — every
 > reading flows through here, regardless of whether it triggers an
 > alert. The architecturally interesting parts are the partial-batch-
 > failure handling at the Kinesis ESM layer and the two-tier
-> idempotency pattern at the DynamoDB write layer." ]**
+> idempotency pattern at the DynamoDB write layer.
 
 ```mermaid
 flowchart TD
@@ -39,8 +38,6 @@ flowchart TD
 
 ## What's interesting about this view
 
-> **[ FILL IN — 3-5 sentences. Suggested angles:
->
 > - **`bisectBatchOnError: true` (highlighted in red).** Without it, one
 >   poison record in a 100-record batch fails the entire batch on every
 >   retry — losing throughput on 99 records to chase 1. With it, Kinesis
@@ -58,7 +55,7 @@ flowchart TD
 > - **Validate at the I/O boundary.** Zod parses raw decoded JSON into a
 >   typed `SensorEvent`; downstream lib code receives the typed value,
 >   never `unknown`. Schema is the source of truth for both runtime
->   validation and TypeScript types. ]**
+>   validation and TypeScript types.
 
 ## Related
 

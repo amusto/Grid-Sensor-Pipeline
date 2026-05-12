@@ -13,8 +13,9 @@
     Copy docs/portfolio/screenshot.svg from Grid-Sensor-Pipeline into
     amusto.github.io/src/assets/grid-sensor-architecture.svg
 
-  Prose placeholders marked [ FILL IN ] — your voice, written in the same
-  tone as the existing Roadmap Tracker card. Two paragraphs total.
+  Initial prose is included inline as a starting point. Overwrite both
+  paragraphs in your own voice — the existing Roadmap Tracker card's
+  cadence is the reference. Two paragraphs total.
 */}
 
 <a
@@ -30,18 +31,14 @@
     </p>
     <h3>Grid Sensor Pipeline</h3>
     <p>
-      {/* [ FILL IN — first paragraph, ~2-3 sentences.
-          Recommended angle: WHAT it is at architectural shape level, NOT a
-          feature list. Example direction:
-          "Serverless IoT event-processing pipeline built end-to-end in
-          TypeScript — application code, AWS infrastructure (CDK), and an
-          MCP server exposing read-only data tools to LLM agents. Sensor
-          telemetry flows through IoT Core into a Kinesis-backed
-          persistence path and, in parallel, through a Step Functions
-          workflow that uses Bedrock to enrich alert notifications with
-          LLM-classified severity, routing decisions, and per-channel
-          narratives." ]
-       */}
+      Serverless IoT event-processing pipeline built end-to-end in
+      TypeScript — application code, AWS infrastructure (CDK), and an
+      MCP server exposing read-only data tools to LLM agents. Sensor
+      telemetry flows through IoT Core into a Kinesis-backed
+      persistence path and, in parallel, through a Step Functions
+      workflow that uses Bedrock to enrich alert notifications with
+      LLM-classified severity, routing decisions, and per-channel
+      narratives.
     </p>
   </div>
   <div>
@@ -53,17 +50,14 @@
         marginBottom: '1.5rem',
       }}
     >
-      {/* [ FILL IN — second paragraph, ~2-3 sentences naming the most
-          interesting architectural decisions. Example direction:
-          "Architecturally interesting: hybrid Step Functions + LangGraph
-          composition (durable workflow at one layer, agentic decisioning
-          at another), fail-soft Bedrock fallback (AI-generated content
-          is best-effort, never load-bearing), and cost guardrails at
-          three time horizons (per-call retry cap + per-window aggregate
-          alarm + per-output schema bounds). Production-grade discipline
-          in a portfolio POC — decision logs, architectural invariants,
-          recurring-failure documentation, end-to-end live verification." ]
-       */}
+      Architecturally interesting: hybrid Step Functions + LangGraph
+      composition (durable workflow at one layer, agentic decisioning
+      at another), fail-soft Bedrock fallback (AI-generated content
+      is best-effort, never load-bearing), and cost guardrails at
+      three time horizons (per-call retry cap + per-window aggregate
+      alarm + per-output schema bounds). Production-grade discipline
+      in a portfolio POC — decision logs, architectural invariants,
+      recurring-failure documentation, end-to-end live verification.
     </p>
     <div style={{ marginBottom: '1.5rem' }}>
       <img

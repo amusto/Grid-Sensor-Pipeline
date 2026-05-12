@@ -2,13 +2,12 @@
 
 > [ ↩ Back to System Overview ](./system-overview.md)
 
-> **[ FILL IN — 2-3 sentences in your voice. Suggested direction:
-> "A local stdio-transport MCP server exposing three read-only tools
+> A local stdio-transport MCP server exposing three read-only tools
 > over the deployed pipeline. Any MCP-aware LLM client (Claude
 > Desktop, Claude Code, custom agents) can connect to it and ask
 > natural-language questions about pipeline state. This demonstrates
 > the system's data API as a platform interface — not just an internal
-> contract, but a callable surface that external tooling builds on." ]**
+> contract, but a callable surface that external tooling builds on.
 
 ```mermaid
 flowchart TD
@@ -36,8 +35,6 @@ flowchart TD
 
 ## What's interesting about this view
 
-> **[ FILL IN — 3-5 sentences. Suggested angles:
->
 > - **MCP demonstrates platform thinking.** The pipeline's read API is
 >   already exposed via API Gateway, DynamoDB, and Step Functions —
 >   but only to AWS-aware callers. The MCP server turns those same
@@ -55,7 +52,7 @@ flowchart TD
 >   Query API URL and Alert state machine ARN from CFN stack outputs
 >   at first tool invocation. Users don't need to manage env vars
 >   manually — the server reads its own infrastructure. Cached for
->   the server's lifetime. ]**
+>   the server's lifetime.
 
 ## Verified live
 

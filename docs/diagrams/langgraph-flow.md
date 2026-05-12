@@ -2,13 +2,12 @@
 
 > [ ↩ Back to System Overview ](./system-overview.md)
 
-> **[ FILL IN — 2-3 sentences in your voice. Suggested direction:
-> "Inside the alert handler Lambda, a three-node LangGraph state
+> Inside the alert handler Lambda, a three-node LangGraph state
 > machine runs over Bedrock Claude Sonnet 4.6. Each node is a plain
 > async function that uses Zod-typed structured output. The graph
 > assembly is mechanical; the architectural decisions worth noticing
 > are the layer separation (Step Functions outer + LangGraph inner)
-> and the fail-soft fallback (AI is best-effort, never load-bearing)." ]**
+> and the fail-soft fallback (AI is best-effort, never load-bearing).
 
 ## The three-node graph
 
@@ -48,8 +47,6 @@ flowchart TD
 
 ## What's interesting about this view
 
-> **[ FILL IN — 3-5 sentences. Suggested angles:
->
 > - **Step Functions outer + LangGraph inner.** Step Functions for the
 >   durable workflow (audit + Wait + retry across long timescales);
 >   LangGraph for the agentic decisioning inside one Lambda invocation
@@ -67,7 +64,7 @@ flowchart TD
 >   (Bedrock error, parse failure, schema violation), the handler
 >   increments `BedrockFallback` and emits Phase 5's deterministic JSON
 >   payload. The alert ALWAYS reaches SNS. AI-generated content is a
->   quality improvement, not a precondition for notification. ]**
+>   quality improvement, not a precondition for notification.
 
 ## Cost guardrails at three time horizons
 
