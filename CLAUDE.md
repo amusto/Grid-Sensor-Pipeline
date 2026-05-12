@@ -266,3 +266,25 @@ npx ts-node scripts/simulate.ts --count 50   # send 50 synthetic sensor events
 - **No hardcoded resource names.** All table names, ARNs, stream names come from environment variables set by CDK.
 - **No `cdk deploy --require-approval never`** until stable.
 - **`cdk destroy --all` after dev sessions.** IoT Core charges per message; Kinesis per shard-hour.
+
+---
+
+## Portfolio Publication Procedure
+
+This project ships to [amusto.github.io](https://github.com/amusto/amusto.github.io) — the developer's personal GitHub Pages site, also a React + react-bootstrap project. amusto.github.io lives as a sibling of this repo under `/Users/armandomusto/myWorkplace/portfolio-projects/`.
+
+**The integration kit lives in [`docs/portfolio/`](docs/portfolio/):**
+
+- `card.jsx` — the React snippet to paste into amusto.github.io's `src/App.jsx` projects section.
+- `screenshot.svg` — the 400px-wide architecture diagram for the card.
+- `README.md` — step-by-step integration instructions.
+
+**The single source of truth is `docs/portfolio/` in this repo.** When the project ships new capabilities, update the files in this directory first; the integration target (amusto.github.io) is downstream.
+
+**To work on portfolio integration in a Claude session,** the recommended workspace pattern is to open Cowork at `/Users/armandomusto/myWorkplace/portfolio-projects/` (the parent folder). That gives Claude visibility into both this repo and amusto.github.io in one session. From there, follow the integration procedure in `docs/portfolio/README.md`.
+
+**Standing cross-project references** (career-level practices, not project-specific):
+- [`docs/_private/articulation-practice.md`](docs/_private/articulation-practice.md) — articulation-as-skill practice loop.
+- [`docs/_private/collaboration-mode.md`](docs/_private/collaboration-mode.md) — the knowledge-anchor pattern for AI-assisted development.
+
+These live in this project's `_private/` for now. When other projects need them, they should be lifted to a `portfolio-projects/.shared/` (or equivalent) location so they apply across all projects without duplication.
