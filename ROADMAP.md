@@ -15,9 +15,9 @@ elapsed time depends on focus and velocity.
 
 ## Current state
 
-**Today:** Day 4 (2026-05-11)
-**Active phase:** **Phase 8 — AI/ML Integration ✅** (all 6 sub-phases shipped end-to-end including the LangGraph happy path verified live against Bedrock Sonnet 4.6 — 10 concurrent breach events successfully enriched with LLM-classified severity tiers, routing decisions, and per-channel narratives). Phase 9 (agentic case routing) is next up.
-**Last shipped:** P8.6 — local stdio MCP server (`mcp-server/server.ts`) with three read-only tools: `query_sensor_readings` (wraps Query API), `query_recent_breaches` (DynamoDB scan + threshold predicate), `get_alert_history` (Step Functions ListExecutions). Auto-resolves Query API URL + alert state-machine ARN from CloudFormation outputs. Protocol-layer verified via JSON-RPC stdin: `initialize` handshake returns server capabilities; `tools/list` returns all three tools with their input schemas intact. README documents Claude Desktop / Code config stanzas. Same day: P8.5 fail-soft path verified in production after the Anthropic use-case gate trip surfaced a deploy lesson captured in `phase-08-ai-ml-integration.md`.
+**Today:** Day 5 (2026-05-12)
+**Active phase:** **Phase 8 — AI/ML Integration ✅** (all 6 sub-phases shipped). Currently in a **pre-Phase 9 interlude** — capturing portfolio infrastructure, cross-project patterns, and articulation practice material. Day 5 transitions into a parent-folder workspace to integrate the Grid Sensor card into the personal portfolio site (amusto.github.io). Phase 9 (agentic case routing) is next as core work.
+**Last shipped:** Issue #1 — alert workflow escalation path Zod validation fix. A latent Phase 5 bug surfaced during P8.5 testing: Step Functions' `resultPath: $.alert` appended a field to the workflow state that the alert handler's `.strict()` Zod validator rejected on the escalation invocation. Fix: `extractSourceEvent` projects `event.context` to only the SensorEvent fields before validation. Verified live: 12 breach-driven executions completed the full notify → 15-min wait → escalate → resolve path with `SUCCEEDED` status (vs 100% `FAILED` before the fix). GitHub issue #1 opened with full root cause + Mermaid state-shape diagram + acceptance criteria; closed by the commit. Issue + fix is the cleanest "describe a subtle bug you found in production" interview story to surface to date.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
 ---
@@ -1168,3 +1168,99 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     verification cheatsheet Tier 4.6 added for Bedrock + post-
     destroy orphan check. Phase 9 (agentic case routing) is next
     up; decision logs already written, deliverables outlined.
+
+- **Day 5** (2026-05-12) — **Pre-Phase 9 interlude.** Day opened
+  with the **fifth recurrence** of the Kinesis CFN orphan after
+  overnight destroy; cleanup recipe from `post-destroy-check.sh`
+  surfaced it immediately, re-applied, redeploy succeeded. Pattern
+  promotion from Day 3 (Deploy lesson #4) continues to earn its
+  keep — automated detection now catches a recurring failure class
+  that previously bit on every fresh-deploy cycle.
+  - **Issue #1 — Alert workflow escalation Zod validation bug
+    (✅ closed):** Phase 5 latent bug surfaced during yesterday's
+    P8.5 testing. Step Functions' `resultPath: $.alert` appended
+    an `alert.acknowledged` field to the workflow state; the alert
+    handler's `extractSourceEvent` passed `event.context` to the
+    `.strict()` Zod validator unchanged on escalation; validator
+    rejected the unknown key; Lambda threw; execution marked
+    FAILED. Three FAILED executions in the previous day's
+    `list-executions` were the artifact. Fix: explicit allowlist
+    projection of the SensorEvent fields in `extractSourceEvent`.
+    Decision rationale: keeping `.strict()` on the validator
+    preserves defense-in-depth at the I/O boundary; the allowlist
+    is the single place that needs updating if Step Functions ever
+    appends more state fields. GitHub issue #1 opened with full
+    root cause + Mermaid state-shape diagram + acceptance
+    criteria; new regression test in `alert-handler.test.ts`;
+    fix deployed; **live verification: 12 breach-driven Step
+    Functions executions completed the full
+    NotifyOps → WaitForAck → EscalateToOnCall → AlertResolved
+    path with `SUCCEEDED` status** (vs 100% `FAILED` before the
+    fix). Closed via commit message convention (`Closes #1`).
+    Cleanest "describe a subtle bug you found in production"
+    interview story shipped to date.
+  - **New collaboration mode kicked in.** After the Torus call
+    feedback ("inability to explain Technical approach"), the
+    in-session mode shifted: Claude scaffolds and reviews; the
+    candidate writes the **knowledge-anchor files** in each phase;
+    code reviews are critical-pushback shape. The escalation fix
+    was the first anchor — Claude wrote the JSDoc + test
+    scaffolding; candidate implemented the fix body + regression
+    test; Claude reviewed with specific pushback. Standing
+    references captured: `docs/_private/collaboration-mode.md`
+    and `docs/_private/articulation-practice.md`. Both gitignored;
+    persist across sessions.
+  - **Articulation practice loop.** Multiple cold-explanation
+    exercises through the day: elevator pitch (DoD project first,
+    then Grid Sensor — direct reviewer pushback both rounds);
+    issue #1 walkthrough as the "describe a subtle bug" story
+    (review identified missed beats and the six-element interview
+    structure: symptom + non-obvious detail + diagnostic arc +
+    systemic insight + alternatives considered + verification);
+    IoT Rules Engine refresher + Step Functions state transition
+    walkthrough; MQTT vs ADS-B comparison; AWS IoT Core
+    alternatives (self-hosted Mosquitto/EMQX + smallstep CA);
+    ActiveMQ → Spring Boot bridge → Kafka cross-project pattern
+    recognition (three projects: Aireon, Northstrat, Grid Sensor).
+  - **Cross-project pattern capture.** New `docs/_private/cross-project-patterns.md`
+    captures career-level patterns with employer specifics. Public
+    counterpart shipped as `docs/learning/bridge-brokers-at-boundaries.md`
+    (employer-anonymized, anchored on the current project's
+    MQTT → IoT Rules Engine → Kinesis bridge). Pattern added to
+    `_design-patterns-index.md` and `docs/learning/README.md`.
+    Establishes the **dual-artifact pattern for portfolio
+    publication going forward**: private capture with employer
+    specifics, public counterpart demonstrating the pattern via
+    the current project.
+  - **Portfolio publication infrastructure.** Scaffolded
+    `docs/diagrams/` with five Mermaid files — system overview
+    (entry point with `click` directives navigating to the four
+    drill-downs: data ingestion, alert workflow, LangGraph flow,
+    MCP server). Each diagram file paired with placeholder prose
+    paragraphs in the candidate's voice (knowledge-anchor step
+    waiting to be filled). Scaffolded `docs/portfolio/` as the
+    integration kit for amusto.github.io (card.jsx, screenshot.svg,
+    integration README). Added "Portfolio Publication Procedure"
+    section to `CLAUDE.md` so future Claude sessions automatically
+    know where the kit lives. Established the **single source of
+    truth pattern**: each project repo carries its own portfolio
+    kit; amusto.github.io is the downstream publication surface.
+  - **Workspace switch teed up.** Discovered that amusto.github.io
+    is a Create React App + react-bootstrap project living as a
+    sibling of Grid-Sensor-Pipeline under `portfolio-projects/`.
+    Next session opens Cowork at the parent folder
+    (`portfolio-projects/`) so the new context has read/write
+    access to both repos in one session. Card prose drafted in
+    revisable form; candidate writes the final voice. Day 5 ends
+    *before* the workspace switch — final commit captures the
+    interlude work cleanly; the integration session is its own
+    artifact.
+  - **State at end of Day 5.** Phase 8 complete; Issue #1 closed;
+    portfolio kit + diagrams scaffolded; cross-project patterns
+    captured in both private + public form; collaboration mode +
+    articulation practice formalized as standing docs. Phase 9
+    (agentic case routing) and the remaining core phases (P10
+    Datadog bridge, P11 polish + teardown, P12 live demo
+    dashboard) still ⬜. Sequence is now: portfolio integration on
+    the new workspace → P9 implementation → P10-P12 close-out →
+    interview prep deep-dives.
