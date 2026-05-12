@@ -40,13 +40,13 @@ flowchart TD
   MCP -.->|reads| Query
   MCP -.->|reads| StepFn
 
-  click Kinesis "./data-ingestion-path.md" "Drill into data ingestion path"
-  click Processor "./data-ingestion-path.md" "Drill into data ingestion path"
-  click DynamoDB "./data-ingestion-path.md" "Drill into data ingestion path"
-  click Query "./data-ingestion-path.md" "Drill into data ingestion path"
-  click StepFn "./alert-workflow.md" "Drill into alert workflow"
-  click Handler "./langgraph-flow.md" "Drill into LangGraph internals"
-  click MCP "./mcp-server.md" "Drill into MCP server"
+  click Kinesis "https://github.com/amusto/Grid-Sensor-Pipeline/blob/main/docs/diagrams/data-ingestion-path.md" "Drill into data ingestion path"
+  click Processor "https://github.com/amusto/Grid-Sensor-Pipeline/blob/main/docs/diagrams/data-ingestion-path.md" "Drill into data ingestion path"
+  click DynamoDB "https://github.com/amusto/Grid-Sensor-Pipeline/blob/main/docs/diagrams/data-ingestion-path.md" "Drill into data ingestion path"
+  click Query "https://github.com/amusto/Grid-Sensor-Pipeline/blob/main/docs/diagrams/data-ingestion-path.md" "Drill into data ingestion path"
+  click StepFn "https://github.com/amusto/Grid-Sensor-Pipeline/blob/main/docs/diagrams/alert-workflow.md" "Drill into alert workflow"
+  click Handler "https://github.com/amusto/Grid-Sensor-Pipeline/blob/main/docs/diagrams/langgraph-flow.md" "Drill into LangGraph internals"
+  click MCP "https://github.com/amusto/Grid-Sensor-Pipeline/blob/main/docs/diagrams/mcp-server.md" "Drill into MCP server"
 
   classDef emph fill:#fef2f2,stroke:#dc2626,stroke-width:2px
   class Handler emph
