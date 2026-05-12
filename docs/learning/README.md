@@ -38,6 +38,7 @@ filled.
 | [`aws-step-functions.md`](aws-step-functions.md) | P5 | ✅ filled | Standard vs Express workflows, state types, error handling, JSONPath |
 | [`cdk-as-typed-model.md`](cdk-as-typed-model.md) | P5 | ✅ filled | CDK's defining property vs Terraform/CloudFormation; typed cross-stack contracts; pitfalls (predicate duplication, deploy ordering, L2 interface drift); CDK vs Pulumi vs CDKTF vs Terraform |
 | [`langchain-langgraph.md`](langchain-langgraph.md) | P8 | 🚧 partial (P8.2 patterns filled; LangGraph assembly added at P8.5) | LangChain vs LangGraph layering; `ChatBedrockConverse` over `BedrockChat`; `withStructuredOutput` + Zod for typed JSON; Bedrock model lifecycle + inference profiles; LLM cost guardrails at three time horizons; hybrid Step Functions + LangGraph composition |
+| [`bridge-brokers-at-boundaries.md`](bridge-brokers-at-boundaries.md) | recurring | ✅ filled | Pattern: external protocol meets bridge layer meets internal protocol. Applied in this project as MQTT (IoT Core) → IoT Rules Engine → Kinesis. Discusses translation-at-the-boundary, dedup placement as scale-dependent, when NOT to use the pattern. |
 | _(AWS Bedrock)_ | P8 | ⬜ planned | Foundation models vs inference profiles; Converse API; pricing; model lifecycle |
 | _(Model Context Protocol)_ | P8 | ⬜ planned | MCP server architecture; stdio vs HTTP/SSE transports; tool schema; Claude Desktop / Code integration |
 | _(Lambda Powertools)_ | recurring | ⬜ planned | Logger, Tracer, Metrics, Idempotency utilities |

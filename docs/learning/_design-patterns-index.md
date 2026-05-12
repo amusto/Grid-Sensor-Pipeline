@@ -101,6 +101,7 @@ specific code.
 | **Self-bootstrapping infrastructure** | No manual shell steps to wire account-specific values; discovery happens at deploy via custom resources | `docs/decisions/phase-04-iot-simulator.md` pre-flight 3 |
 | **Composition over replacement at the right layer** | When two technologies cover similar ground at different abstraction levels, compose rather than choose — each at the layer where it's strongest | `docs/decisions/phase-08-ai-ml-integration.md` pre-flight 1 (Step Functions outer + LangGraph inner); `docs/learning/langchain-langgraph.md` |
 | **Recurring-failure promotion** | When the same defect class hits N times, promote the documentation from "captured edge case" to "recurring class of failure" with a recurrence log + automated detection | `docs/decisions/phase-03-storage-processing.md` Deploy lesson #4 (Kinesis CFN orphan, 4× as of Day 3); `scripts/post-destroy-check.sh` |
+| **Bridge brokers at trust / operational boundaries** | External communication uses one protocol/broker (constrained by the partner / device ecosystem); internal uses another (chosen for your throughput and microservice topology); a bridge layer translates between them. Don't let the external protocol dictate your internal architecture. | `docs/learning/bridge-brokers-at-boundaries.md`; applied in `infra/lib/iot-stack.ts` (IoT Rules Engine as the MQTT→Kinesis bridge) |
 
 ---
 
