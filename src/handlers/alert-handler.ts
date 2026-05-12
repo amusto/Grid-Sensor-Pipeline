@@ -67,9 +67,37 @@ if (!ALERT_TOPIC_ARN) {
 
 const sns = new SNSClient({});
 
+/**
+ * Extract the underlying SensorEvent from the Lambda input.
+ *
+ * Two invocation paths:
+ *   1. NotifyOps (initial): the input IS the SensorEvent.
+ *   2. EscalateToOnCall: the input is { escalated: true, context: <state> }
+ *      where `<state>` is the full Step Functions execution state — which
+ *      includes fields appended by prior tasks (e.g., `alert.acknowledged`
+ *      from NotifyOps' resultPath).
+ *
+ * On the escalation path we must NOT pass `event.context` to the
+ * validator unchanged — the .strict() Zod schema rejects unknown keys
+ * and we'd throw on every escalation.
+ *
+ * Why an explicit allowlist (not deleting .strict() from the validator):
+ * keeping .strict() preserves defense-in-depth at the I/O boundary. If
+ * Step Functions later appends additional state fields from a new
+ * resultPath, the validator catches them everywhere except here — and
+ * this is the single place that needs updating.
+ */
 const extractSourceEvent = (event: AlertEvent): unknown => {
   if (event.escalated === true && event.context) {
-    return event.context;
+    const ctx = event.context as Record<string, unknown>;
+    return {
+      sensorId:    ctx.sensorId,
+      timestamp:   ctx.timestamp,
+      readingType: ctx.readingType,
+      value:       ctx.value,
+      unit:        ctx.unit,
+      gridZone:    ctx.gridZone,
+    };
   }
   return event;
 };

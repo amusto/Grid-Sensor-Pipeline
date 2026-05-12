@@ -170,11 +170,14 @@ describe('handler — initial notification with LangGraph failure (fail-soft)', 
   });
 });
 
-describe('handler — escalation path skips the LangGraph', () => {
-  it('does not invoke the LangGraph for escalation invocations', async () => {
+describe('handler — escalation path: skips LangGraph and tolerates Step-Functions-wrapped state (issue #1)', () => {
+  it('handles the production-shape escalation payload', async () => {
     const escalationEvent = {
       escalated: true,
-      context: buildBreachEvent(),
+      context: {
+        ...buildBreachEvent(),
+        alert: { acknowledged: false },  // ← appended by NotifyOps' resultPath
+      },
     };
 
     const result = await handler(escalationEvent, ctx);
@@ -186,6 +189,7 @@ describe('handler — escalation path skips the LangGraph', () => {
     const body = JSON.parse(publishedInput.Message);
     expect(body.severity).toBe('P1');
     expect(body.escalated).toBe(true);
+    expect(body.alert).toBeUndefined();
     expect(publishedInput.Subject).toMatch(/^\[P1 ESCALATED\]/);
   });
 });
