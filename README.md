@@ -12,47 +12,47 @@ Serverless event-driven pipeline for IoT grid sensor telemetry — built on AWS 
   │                                                                             │
   │  [IoT Device / Simulator]                                                   │
   │    Lambda (TypeScript)                                                      │
-  │    Publishes to IoT Core topic: sensors/{sensorId}/telemetry               │
-  │    Payload: { sensorId, timestamp, readingType, value, unit, gridZone }    │
+  │    Publishes to IoT Core topic: sensors/{sensorId}/telemetry                │
+  │    Payload: { sensorId, timestamp, readingType, value, unit, gridZone }     │
   │         │                                                                   │
   │         ▼                                                                   │
-  │  [AWS IoT Core]  ←── X.509 device auth, device shadows                    │
+  │  [AWS IoT Core]  ←── X.509 device auth, device shadows                      │
   │    MQTT broker                                                              │
   │    IoT Rules Engine                                                         │
   │         │                                                                   │
-  │    ┌────┴──────────────────────────────────┐                               │
+  │    ┌────┴──────────────────────────────────┐                                │
   │    ▼ Rule: all telemetry                   ▼ Rule: value > threshold        │
   │  [Kinesis Data Stream]              [Step Functions]                        │
   │    partition key = sensorId          Alert Workflow                         │
   │    24h retention, replayable         (Standard Workflow)                    │
   │         │                             │                                     │
   │         ▼                             ▼                                     │
-  │  [Processor Lambda]            Notify → Wait Ack → Escalate                │
-  │   Kinesis ESM, batch: 10                                                   │
+  │  [Processor Lambda]            Notify → Wait Ack → Escalate                 │
+  │   Kinesis ESM, batch: 10                                                    │
   │   bisectOnError: true                                                       │
   │         │                                                                   │
-  │    ┌────┴──────────────────┐                                               │
-  │    ▼                       ▼                                               │
-  │ [DynamoDB]          [CloudWatch]                                           │
-  │  PK: sensorId        EMF metrics via Lambda Powertools                     │
-  │  SK: timestamp       → CloudWatch natively                                 │
-  │  idempotency key     → Datadog via Lambda Extension (production)           │
-  │  TTL: 30 days        X-Ray distributed tracing                             │
-  │    │                       │                                               │
-  │    ▼                       ▼                                               │
-  │  [Query API]         [Alarms + Dashboard]                                  │
-  │  API GW → Lambda      DLQ depth · P99 latency · Step Functions failures    │
-  │  GET /sensors/{id}/readings?from=&to=                                      │
+  │    ┌────┴──────────────────┐                                                │
+  │    ▼                       ▼                                                │
+  │ [DynamoDB]          [CloudWatch]                                            │
+  │  PK: sensorId        EMF metrics via Lambda Powertools                      │
+  │  SK: timestamp       → CloudWatch natively                                  │
+  │  idempotency key     → Datadog via Lambda Extension (production)            │
+  │  TTL: 30 days        X-Ray distributed tracing                              │
+  │    │                       │                                                │
+  │    ▼                       ▼                                                │
+  │  [Query API]         [Alarms + Dashboard]                                   │
+  │  API GW → Lambda      DLQ depth · P99 latency · Step Functions failures     │
+  │  GET /sensors/{id}/readings?from=&to=                                       │
   │         │                                                                   │
   │         ▼                                                                   │
-  │  [SQS DLQ]  ←── failed Kinesis batches after max retries                  │
+  │  [SQS DLQ]  ←── failed Kinesis batches after max retries                    │
   │       │                                                                     │
   │       ▼                                                                     │
-  │  [DLQ Inspector Lambda]                                                    │
-  │   structured log + SNS alert + optional Kinesis replay                     │
+  │  [DLQ Inspector Lambda]                                                     │
+  │   structured log + SNS alert + optional Kinesis replay                      │
   │                                                                             │
-  │  [Kinesis Firehose → S3]                                                   │
-  │   cold archive — all raw events, Parquet by date/sensorId                 │
+  │  [Kinesis Firehose → S3]                                                    │
+  │   cold archive — all raw events, Parquet by date/sensorId                   │
   └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
