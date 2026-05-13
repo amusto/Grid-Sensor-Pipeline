@@ -8,6 +8,9 @@
  *   4. System prompt anchors per-channel audience + tone (audience
  *      drift would be a quality regression).
  *   5. Schema length bounds enforce the cost-lever output cap.
+ *
+ * Channel set as of 2026-05-13: { email, sms }. SMS bounded to 160
+ * chars (GSM-7 single-segment limit), email bounded to 1200 chars.
  */
 
 const mockInvokeStructured = jest.fn();
@@ -50,13 +53,7 @@ const buildSeverity = (overrides: Partial<Severity> = {}): Severity => ({
 });
 
 const buildRouting = (overrides: Partial<RoutingPlan> = {}): RoutingPlan => ({
-  channels: {
-    slack: true,
-    pagerduty: true,
-    email: true,
-    status_page: false,
-  },
-  pageOnCall: true,
+  channels: { email: true, sms: true },
   overrideApplied: false,
   ...overrides,
 });
@@ -66,15 +63,12 @@ beforeEach(() => {
 });
 
 describe('generateNarratives — happy path', () => {
-  it('returns per-channel narratives for a P1 (slack + pagerduty + email)', async () => {
+  it('returns per-channel narratives for a P1 (email + sms)', async () => {
     const narratives: Narratives = {
       narratives: {
-        slack:
-          'P1: sensor-005 voltage 108V (6V below 114V min). Investigate now.',
-        pagerduty:
-          'P1 — sensor-005 voltage=108V; threshold=114V min. Check upstream substation status first.',
         email:
-          'Sensor sensor-005 reported a voltage reading of 108V at 09:15Z, 6V below the 114V minimum threshold in NERC band. This is a P1 — significant deviation, on-call paged. Investigation in progress; substation feed will be checked first.',
+          'Sensor sensor-005 reported a voltage reading of 108V at 09:15Z, 6V below the 114V minimum threshold in NERC band. This is a P1 — significant deviation, on-call paged via SMS. Investigation in progress; substation feed will be checked first.',
+        sms: 'P1: sensor-005 voltage 108V (6V below 114V min). Investigate now.',
       },
     };
     mockInvokeStructured.mockResolvedValueOnce(narratives);
@@ -87,14 +81,13 @@ describe('generateNarratives — happy path', () => {
 
     expect(out).toEqual(narratives);
     expect(narrativesSchema.safeParse(out).success).toBe(true);
-    expect(out.narratives.status_page).toBeUndefined();
   });
 
-  it('returns just slack narrative for a P3 (slack only)', async () => {
+  it('returns just the email narrative for a P3 (email only)', async () => {
     const narratives: Narratives = {
       narratives: {
-        slack:
-          'P3: sensor-019 voltage 113V (1V below 114V min). Monitoring; no action required.',
+        email:
+          'Sensor sensor-019 reported a voltage reading of 113V at 09:15Z, 1V below the 114V minimum threshold. This is a P3 informational deviation — monitoring only, no immediate action required.',
       },
     };
     mockInvokeStructured.mockResolvedValueOnce(narratives);
@@ -106,33 +99,20 @@ describe('generateNarratives — happy path', () => {
         reasoning: 'voltage=113V is 1V below 114V minimum — mild.',
       }),
       buildRouting({
-        channels: {
-          slack: true,
-          pagerduty: false,
-          email: false,
-          status_page: false,
-        },
-        pageOnCall: false,
+        channels: { email: true, sms: false },
       }),
     );
 
-    expect(out.narratives.slack).toBeDefined();
-    expect(out.narratives.pagerduty).toBeUndefined();
-    expect(out.narratives.email).toBeUndefined();
-    expect(out.narratives.status_page).toBeUndefined();
+    expect(out.narratives.email).toBeDefined();
+    expect(out.narratives.sms).toBeUndefined();
   });
 
-  it('returns all four narratives for a P0 (all channels selected)', async () => {
+  it('returns both narratives for a P0 (paging-grade)', async () => {
     const narratives: Narratives = {
       narratives: {
-        slack:
-          'P0: sensor-002 voltage 95V (19V below 114V min). Page acknowledged; investigating.',
-        pagerduty:
-          'P0 — sensor-002 voltage=95V; threshold=114V min; deviation 19V. Check zone-1 feed status immediately.',
         email:
-          'Critical: sensor sensor-002 reported 95V at 09:15Z — a 19V deviation below the 114V minimum, P0 severity. On-call paged, status page updated. Investigation focusing on the zone-1 upstream feed.',
-        status_page:
-          'A localized grid stability event has been detected in zone 2. Operations is actively investigating. No customer impact expected at this time.',
+          'Critical: sensor sensor-002 reported 95V at 09:15Z — a 19V deviation below the 114V minimum, P0 severity. On-call paged via SMS. Investigation focusing on the zone-1 upstream feed.',
+        sms: 'P0: sensor-002 voltage 95V (19V below 114V min). Page acknowledged; investigating.',
       },
     };
     mockInvokeStructured.mockResolvedValueOnce(narratives);
@@ -144,20 +124,12 @@ describe('generateNarratives — happy path', () => {
         reasoning: 'voltage=95V is 19V below 114V minimum — P0 tier.',
       }),
       buildRouting({
-        channels: {
-          slack: true,
-          pagerduty: true,
-          email: true,
-          status_page: true,
-        },
-        pageOnCall: true,
+        channels: { email: true, sms: true },
       }),
     );
 
-    expect(out.narratives.slack).toBeDefined();
-    expect(out.narratives.pagerduty).toBeDefined();
     expect(out.narratives.email).toBeDefined();
-    expect(out.narratives.status_page).toBeDefined();
+    expect(out.narratives.sms).toBeDefined();
   });
 });
 
@@ -183,23 +155,16 @@ describe('generateNarratives — schema + message contract', () => {
       buildEvent(),
       buildSeverity(),
       buildRouting({
-        channels: {
-          slack: true,
-          pagerduty: false,
-          email: true,
-          status_page: false,
-        },
+        channels: { email: true, sms: false },
       }),
     );
 
     const userMessage = mockInvokeStructured.mock.calls[0][1][1];
     const userText: string = userMessage.content;
 
-    expect(userText).toMatch(/Routing plan selected:.*slack/);
     expect(userText).toMatch(/Routing plan selected:.*email/);
     // Channels NOT selected must NOT appear in the "selected" line.
-    expect(userText).not.toMatch(/Routing plan selected:.*pagerduty/);
-    expect(userText).not.toMatch(/Routing plan selected:.*status_page/);
+    expect(userText).not.toMatch(/Routing plan selected:.*sms/);
   });
 
   it('user prompt carries severity + reasoning + event context', async () => {
@@ -231,9 +196,10 @@ describe('generateNarratives — schema + message contract', () => {
       buildEvent(),
       buildSeverity({ severity: 'P2' }),
       buildRouting({
+        channels: { email: true, sms: true },
         overrideApplied: true,
         overrideReason:
-          'sensor has breached three times in the last 30 minutes; escalating P2 routing.',
+          'sensor has breached three times in the last 30 minutes; escalating P2 to SMS paging.',
       }),
     );
 
@@ -242,19 +208,20 @@ describe('generateNarratives — schema + message contract', () => {
     expect(userText).toContain('three times');
   });
 
-  it('system prompt anchors all four channels with audience + tone', () => {
+  it('system prompt anchors both channels with audience + tone', () => {
     const { SYSTEM_PROMPT } = __testables;
 
     // Each channel must be named explicitly with tone guidance.
-    expect(SYSTEM_PROMPT).toContain('SLACK');
     expect(SYSTEM_PROMPT).toContain('EMAIL');
-    expect(SYSTEM_PROMPT).toContain('PAGERDUTY');
-    expect(SYSTEM_PROMPT).toContain('STATUS_PAGE');
+    expect(SYSTEM_PROMPT).toContain('SMS');
 
     // Audience anchors (small spot-check; full prompt review is a
     // separate close-out task).
     expect(SYSTEM_PROMPT.toLowerCase()).toContain('on-call');
-    expect(SYSTEM_PROMPT.toLowerCase()).toContain('customers');
+    expect(SYSTEM_PROMPT.toLowerCase()).toContain('engineering leads');
+
+    // SMS bound surfaces as a concrete rule the LLM can obey.
+    expect(SYSTEM_PROMPT).toContain('160');
   });
 
   it('propagates Bedrock errors', async () => {
@@ -272,18 +239,32 @@ describe('narrativesSchema bounds', () => {
     expect(r.success).toBe(true);
   });
 
-  it('rejects a slack narrative over 280 chars', () => {
+  it('accepts an SMS narrative at the 160-char limit', () => {
     const r = narrativesSchema.safeParse({
-      narratives: { slack: 'x'.repeat(281) },
+      narratives: { sms: 'x'.repeat(160) },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects an SMS narrative over 160 chars (GSM-7 single-segment limit)', () => {
+    const r = narrativesSchema.safeParse({
+      narratives: { sms: 'x'.repeat(161) },
     });
     expect(r.success).toBe(false);
   });
 
-  it('rejects a slack narrative under 10 chars', () => {
+  it('rejects an SMS narrative under 10 chars', () => {
     const r = narrativesSchema.safeParse({
-      narratives: { slack: 'short' },
+      narratives: { sms: 'short' },
     });
     expect(r.success).toBe(false);
+  });
+
+  it('accepts an email narrative at the 1200-char limit', () => {
+    const r = narrativesSchema.safeParse({
+      narratives: { email: 'x'.repeat(1200) },
+    });
+    expect(r.success).toBe(true);
   });
 
   it('rejects an email narrative over 1200 chars', () => {
@@ -293,32 +274,25 @@ describe('narrativesSchema bounds', () => {
     expect(r.success).toBe(false);
   });
 
-  it('rejects a pagerduty narrative over 400 chars', () => {
+  it('rejects an email narrative under 20 chars', () => {
     const r = narrativesSchema.safeParse({
-      narratives: { pagerduty: 'x'.repeat(401) },
+      narratives: { email: 'too short' },
     });
     expect(r.success).toBe(false);
   });
 
-  it('rejects a status_page narrative over 600 chars', () => {
-    const r = narrativesSchema.safeParse({
-      narratives: { status_page: 'x'.repeat(601) },
-    });
-    expect(r.success).toBe(false);
-  });
-
-  it('rejects unknown channel keys', () => {
+  it('accepts unknown channel keys (schema is permissive, not strict)', () => {
     const r = narrativesSchema.safeParse({
       narratives: {
-        slack: 'P3: sensor-001 voltage 113V — monitor only.',
-        twitter: 'should not be allowed',
+        email:
+          'A short but valid email narrative for an informational P3.',
+        slack: 'should be ignored',
       },
     });
     // Zod object schemas accept extra keys by default; we explicitly
-    // do NOT want that here, but the current schema is permissive.
-    // This test documents the current behavior — if we want strict
-    // mode, the schema needs `.strict()`.
-    // For now: accepted (extras ignored).
+    // do NOT enforce strict mode here so legacy/future channels parse
+    // cleanly even if the codebase has trimmed them. Documented
+    // behavior; tighten to .strict() if regressions surface.
     expect(r.success).toBe(true);
   });
 });

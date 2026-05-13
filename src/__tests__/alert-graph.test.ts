@@ -59,17 +59,15 @@ const stubSeverity: Severity = {
 };
 
 const stubRouting: RoutingPlan = {
-  channels: { slack: true, pagerduty: true, email: true, status_page: false },
-  pageOnCall: true,
+  channels: { email: true, sms: true },
   overrideApplied: false,
 };
 
 const stubNarratives: Narratives = {
   narratives: {
-    slack: 'P1: sensor-007 voltage 108V (6V below 114V min). Investigate now.',
-    pagerduty: 'P1 — sensor-007 voltage=108V; threshold=114V. Check substation feed first.',
     email:
-      'Sensor sensor-007 reported voltage=108V at 10:00Z — 6V below the 114V minimum. P1 severity; on-call paged. Initial investigation: upstream substation status.',
+      'Sensor sensor-007 reported voltage=108V at 10:00Z — 6V below the 114V minimum. P1 severity; on-call paged via SMS. Initial investigation: upstream substation status.',
+    sms: 'P1: sensor-007 voltage 108V (6V below 114V min). Investigate now.',
   },
 };
 

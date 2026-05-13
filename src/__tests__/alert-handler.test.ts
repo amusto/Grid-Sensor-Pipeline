@@ -80,15 +80,13 @@ const stubGraphResult = {
     reasoning: 'voltage=108V is 6V below 114V minimum — P1 band.',
   },
   routing: {
-    channels: { slack: true, pagerduty: true, email: true, status_page: false },
-    pageOnCall: true,
+    channels: { email: true, sms: true },
     overrideApplied: false,
   },
   narratives: {
     narratives: {
-      slack: 'P1: sensor-007 voltage 108V. Investigate now.',
-      pagerduty: 'P1 — sensor-007 voltage=108V; check substation feed.',
-      email: 'Sensor sensor-007 reported voltage=108V at 10:00Z — P1.',
+      email: 'Sensor sensor-007 reported voltage=108V at 10:00Z — P1. Investigation in progress.',
+      sms: 'P1: sensor-007 voltage 108V (6V below 114V min). Investigate now.',
     },
   },
 };
@@ -118,8 +116,8 @@ describe('handler — initial notification with LangGraph success', () => {
     expect(body.severity).toBe('P1');
     expect(body.severityConfidence).toBe(0.91);
     expect(body.severityReasoning).toMatch(/below 114V minimum/);
-    expect(body.narratives.slack).toMatch(/sensor-007/);
-    expect(body.routing.pageOnCall).toBe(true);
+    expect(body.narratives.sms).toMatch(/sensor-007/);
+    expect(body.routing.channels.sms).toBe(true);
 
     // Original breach fields preserved
     expect(body.sensorId).toBe('sensor-007');

@@ -5,8 +5,12 @@
  *   2. Pins the contract: schema, message shape, prompt content.
  *   3. Schema enforces the override-reason audit constraint.
  *   4. Baseline matrix is well-formed (every tier has an entry; each
- *      entry has the four channels + pageOnCall).
+ *      entry has the two channels as booleans).
  *   5. Bedrock errors propagate.
+ *
+ * Channel set as of 2026-05-13: { email, sms }. SMS is paging-grade.
+ * The `pageOnCall` boolean from the original 4-channel design was
+ * collapsed into `channels.sms`.
  */
 
 const mockInvokeStructured = jest.fn();
@@ -60,83 +64,48 @@ describe('determineRouting — baseline-path fixture matrix', () => {
     name: string;
     tier: Severity['severity'];
     expectedChannels: RoutingPlan['channels'];
-    expectedPageOnCall: boolean;
   }>([
     {
-      name: 'P0 — all channels + page on call',
+      name: 'P0 — both channels (email + sms, paging-grade)',
       tier: 'P0',
-      expectedChannels: {
-        slack: true,
-        pagerduty: true,
-        email: true,
-        status_page: true,
-      },
-      expectedPageOnCall: true,
+      expectedChannels: { email: true, sms: true },
     },
     {
-      name: 'P1 — slack + pagerduty + email; page on call; no status page',
+      name: 'P1 — both channels (email + sms, paging-grade)',
       tier: 'P1',
-      expectedChannels: {
-        slack: true,
-        pagerduty: true,
-        email: true,
-        status_page: false,
-      },
-      expectedPageOnCall: true,
+      expectedChannels: { email: true, sms: true },
     },
     {
-      name: 'P2 — slack + email; no page',
+      name: 'P2 — email only (no SMS paging)',
       tier: 'P2',
-      expectedChannels: {
-        slack: true,
-        pagerduty: false,
-        email: true,
-        status_page: false,
-      },
-      expectedPageOnCall: false,
+      expectedChannels: { email: true, sms: false },
     },
     {
-      name: 'P3 — slack only; no page',
+      name: 'P3 — email only (informational)',
       tier: 'P3',
-      expectedChannels: {
-        slack: true,
-        pagerduty: false,
-        email: false,
-        status_page: false,
-      },
-      expectedPageOnCall: false,
+      expectedChannels: { email: true, sms: false },
     },
-  ])(
-    'returns the baseline routing for $name',
-    async ({ tier, expectedChannels, expectedPageOnCall }) => {
-      const plan: RoutingPlan = {
-        channels: expectedChannels,
-        pageOnCall: expectedPageOnCall,
-        overrideApplied: false,
-      };
-      mockInvokeStructured.mockResolvedValueOnce(plan);
+  ])('returns the baseline routing for $name', async ({ tier, expectedChannels }) => {
+    const plan: RoutingPlan = {
+      channels: expectedChannels,
+      overrideApplied: false,
+    };
+    mockInvokeStructured.mockResolvedValueOnce(plan);
 
-      const out = await determineRouting(buildEvent(), buildSeverity(tier));
+    const out = await determineRouting(buildEvent(), buildSeverity(tier));
 
-      expect(out).toEqual(plan);
-      expect(routingPlanSchema.safeParse(out).success).toBe(true);
-    },
-  );
+    expect(out).toEqual(plan);
+    expect(routingPlanSchema.safeParse(out).success).toBe(true);
+  });
 });
 
 describe('determineRouting — override path', () => {
-  it('accepts overrideApplied=true with a reason', async () => {
+  it('accepts overrideApplied=true with a reason (P2 escalated to SMS paging)', async () => {
     const plan: RoutingPlan = {
-      channels: {
-        slack: true,
-        pagerduty: true,
-        email: true,
-        status_page: false,
-      },
-      pageOnCall: true,
+      channels: { email: true, sms: true },
       overrideApplied: true,
       overrideReason:
-        'sensor has breached three times in the last 30 minutes; escalating P2 routing to P1 posture.',
+        'sensor has breached three times in the last 30 minutes; escalating P2 to SMS paging posture.',
     };
     mockInvokeStructured.mockResolvedValueOnce(plan);
 
@@ -144,6 +113,7 @@ describe('determineRouting — override path', () => {
 
     expect(out.overrideApplied).toBe(true);
     expect(out.overrideReason).toBeDefined();
+    expect(out.channels.sms).toBe(true);
     expect(routingPlanSchema.safeParse(out).success).toBe(true);
   });
 });
@@ -151,13 +121,7 @@ describe('determineRouting — override path', () => {
 describe('determineRouting — schema contract', () => {
   it('passes the routingPlanSchema and a [system, user] message pair', async () => {
     mockInvokeStructured.mockResolvedValueOnce({
-      channels: {
-        slack: true,
-        pagerduty: false,
-        email: true,
-        status_page: false,
-      },
-      pageOnCall: false,
+      channels: { email: true, sms: false },
       overrideApplied: false,
     });
 
@@ -174,13 +138,7 @@ describe('determineRouting — schema contract', () => {
 
   it('user prompt includes severity tier, confidence, reasoning, and event context', async () => {
     mockInvokeStructured.mockResolvedValueOnce({
-      channels: {
-        slack: true,
-        pagerduty: true,
-        email: true,
-        status_page: false,
-      },
-      pageOnCall: true,
+      channels: { email: true, sms: true },
       overrideApplied: false,
     });
 
@@ -212,6 +170,10 @@ describe('determineRouting — schema contract', () => {
     expect(prompt).toContain('P2');
     expect(prompt).toContain('P3');
 
+    // Both channels must be named (the model has to know the choice set).
+    expect(prompt.toLowerCase()).toContain('email');
+    expect(prompt.toLowerCase()).toContain('sms');
+
     // Override criteria mentioned (model must know when to deviate).
     expect(prompt.toLowerCase()).toContain('cascading-failure');
     expect(prompt.toLowerCase()).toContain('recurrence');
@@ -231,17 +193,11 @@ describe('determineRouting — schema contract', () => {
 });
 
 describe('routingPlanSchema bounds', () => {
-  const baseChannels = {
-    slack: true,
-    pagerduty: false,
-    email: false,
-    status_page: false,
-  };
+  const baseChannels = { email: true, sms: false };
 
   it('accepts overrideApplied=false without reason', () => {
     const r = routingPlanSchema.safeParse({
       channels: baseChannels,
-      pageOnCall: false,
       overrideApplied: false,
     });
     expect(r.success).toBe(true);
@@ -250,7 +206,6 @@ describe('routingPlanSchema bounds', () => {
   it('rejects overrideApplied=true WITHOUT overrideReason (audit constraint)', () => {
     const r = routingPlanSchema.safeParse({
       channels: baseChannels,
-      pageOnCall: false,
       overrideApplied: true,
     });
     expect(r.success).toBe(false);
@@ -259,7 +214,6 @@ describe('routingPlanSchema bounds', () => {
   it('rejects overrideReason shorter than 10 chars', () => {
     const r = routingPlanSchema.safeParse({
       channels: baseChannels,
-      pageOnCall: false,
       overrideApplied: true,
       overrideReason: 'short',
     });
@@ -268,8 +222,7 @@ describe('routingPlanSchema bounds', () => {
 
   it('rejects missing channel keys', () => {
     const r = routingPlanSchema.safeParse({
-      channels: { slack: true, pagerduty: false, email: false }, // missing status_page
-      pageOnCall: false,
+      channels: { email: true }, // missing sms
       overrideApplied: false,
     });
     expect(r.success).toBe(false);
@@ -277,8 +230,7 @@ describe('routingPlanSchema bounds', () => {
 
   it('rejects non-boolean channel values', () => {
     const r = routingPlanSchema.safeParse({
-      channels: { ...baseChannels, slack: 'yes' },
-      pageOnCall: false,
+      channels: { email: 'yes', sms: false },
       overrideApplied: false,
     });
     expect(r.success).toBe(false);
@@ -294,32 +246,35 @@ describe('BASELINE_MATRIX integrity', () => {
     });
   });
 
-  it('every tier defines all four channels plus pageOnCall as booleans', () => {
+  it('every tier defines email + sms as booleans', () => {
     tiers.forEach((tier) => {
       const entry = BASELINE_MATRIX[tier];
-      expect(typeof entry.slack).toBe('boolean');
-      expect(typeof entry.pagerduty).toBe('boolean');
       expect(typeof entry.email).toBe('boolean');
-      expect(typeof entry.status_page).toBe('boolean');
-      expect(typeof entry.pageOnCall).toBe('boolean');
+      expect(typeof entry.sms).toBe('boolean');
     });
   });
 
-  it('P0 selects every channel and pages on call', () => {
+  it('P0 selects both channels (paging-grade)', () => {
     const p0 = BASELINE_MATRIX.P0;
-    expect(p0.slack).toBe(true);
-    expect(p0.pagerduty).toBe(true);
     expect(p0.email).toBe(true);
-    expect(p0.status_page).toBe(true);
-    expect(p0.pageOnCall).toBe(true);
+    expect(p0.sms).toBe(true);
   });
 
-  it('P3 selects slack only and does NOT page', () => {
+  it('P1 selects both channels (paging-grade)', () => {
+    const p1 = BASELINE_MATRIX.P1;
+    expect(p1.email).toBe(true);
+    expect(p1.sms).toBe(true);
+  });
+
+  it('P2 selects email only (no SMS paging)', () => {
+    const p2 = BASELINE_MATRIX.P2;
+    expect(p2.email).toBe(true);
+    expect(p2.sms).toBe(false);
+  });
+
+  it('P3 selects email only (informational)', () => {
     const p3 = BASELINE_MATRIX.P3;
-    expect(p3.slack).toBe(true);
-    expect(p3.pagerduty).toBe(false);
-    expect(p3.email).toBe(false);
-    expect(p3.status_page).toBe(false);
-    expect(p3.pageOnCall).toBe(false);
+    expect(p3.email).toBe(true);
+    expect(p3.sms).toBe(false);
   });
 });

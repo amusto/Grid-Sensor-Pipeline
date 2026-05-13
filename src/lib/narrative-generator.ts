@@ -9,32 +9,36 @@
  *
  * **Why per-channel narratives, not one canonical message.** Each
  * channel has different audience, tone, and information needs:
- *   - Slack — on-call ops engineers. Terse, action-oriented, includes
- *     the call-to-action verb. 1-3 sentences.
- *   - Email — engineering leads / management. Structured context,
- *     why this matters, what's being done. Paragraph form.
- *   - PagerDuty — on-call rotation, often half-asleep. Incident-style
- *     summary with the severity prefix, the exact sensor, the
- *     numeric breach, and the suggested first action.
- *   - Status page — customers / public. Plain English, no internal
- *     identifiers, focused on impact and ETA-to-resolution.
+ *   - Email — engineering leads / management / ops engineers reading
+ *     in their inbox. Structured context, why this matters, what's
+ *     being done. Paragraph form. Always sent (the default channel).
+ *   - SMS — on-call ops engineer's phone, possibly mid-task or asleep.
+ *     Extreme brevity, paging-grade. One sentence, single-segment
+ *     (≤160 chars). Sent only when severity warrants the phone
+ *     interrupt.
  *
- * Trying to write one message for all four channels produces something
- * that's optimal for none. Generating four narratives in one LLM call
- * is more token-efficient than four separate calls (shared prompt
- * preamble) while letting each narrative be channel-appropriate.
+ * Trying to write one message for both channels produces something
+ * that's optimal for neither — a paragraph is too long for SMS, a
+ * 160-char sentence is too thin for email. Generating both narratives
+ * in one LLM call is more token-efficient than two separate calls
+ * (shared prompt preamble) while letting each narrative be channel-
+ * appropriate.
  *
  * **What this node does NOT do** (handlers orchestrate; lib executes):
- *   - Send the narrative anywhere (tool calls — P9).
+ *   - Send the narrative anywhere (tool calls — P9.4 "execute tools").
  *   - Decide *which* channels to use (that's the routing node).
- *   - Open cases / persist linkage (P9).
+ *   - Open cases / persist linkage (P9.3 cases table).
  *
- * **Cost shape.** Single LLM call producing four narratives is
- * cheaper than four calls because the breach context only ships once
- * (shared input tokens) even though the output expands per selected
- * channel. Expected per-call: ~600 input tokens, ~400 output tokens
- * for a P0 (all four channels); ~600 input + ~100 output for a P3
- * (slack only). Bounded by schema length limits below.
+ * **Cost shape.** Single LLM call producing up to two narratives.
+ * Breach context ships once (shared input tokens); output expands per
+ * selected channel. Expected per-call: ~600 input tokens, ~250 output
+ * tokens for a P0/P1 (both channels); ~600 input + ~150 output for a
+ * P2/P3 (email only). Bounded by schema length limits below — the
+ * SMS ≤160 cap is both a real-world segment limit and a cost lever.
+ *
+ * **Channel set as of 2026-05-13.** Phase 9 simplified the original
+ * 4-channel design (slack, pagerduty, email, status_page) to 2
+ * channels (email, sms).
  */
 
 import { z } from 'zod';
@@ -48,24 +52,22 @@ import type { RoutingPlan } from './routing-strategy';
 /**
  * Output schema. Each channel narrative is optional — present iff the
  * corresponding routing channel was selected. Schema-level length
- * bounds cap output tokens (cost lever).
+ * bounds cap output tokens (cost lever) and enforce real-world
+ * channel constraints (the 160-char SMS bound is the GSM-7 single-
+ * segment limit).
  *
- *   - slack:        1-3 sentences, max ~280 chars (Twitter-shaped for
- *                   the operator skim case).
- *   - email:        Paragraph form, max ~1200 chars (~200 words).
- *   - pagerduty:    Incident summary, max ~400 chars.
- *   - status_page:  Customer-facing, max ~600 chars.
+ *   - email: Paragraph form, max ~1200 chars (~200 words).
+ *   - sms:   One sentence, max 160 chars (GSM-7 single segment).
  *
- * The refinement at the bottom enforces "if routing selected this
- * channel, the narrative for it MUST be present" — caught at parse
- * time so a malformed LLM output trips Zod, not downstream code.
+ * Downstream channel-selection refinement (narrative present iff
+ * channel selected) is enforced at the alert-handler layer where both
+ * routing and narratives are in scope. Here we only enforce per-field
+ * length bounds.
  */
 export const narrativesSchema = z.object({
   narratives: z.object({
-    slack: z.string().min(10).max(280).optional(),
     email: z.string().min(20).max(1200).optional(),
-    pagerduty: z.string().min(10).max(400).optional(),
-    status_page: z.string().min(10).max(600).optional(),
+    sms: z.string().min(10).max(160).optional(),
   }),
 });
 
@@ -75,17 +77,13 @@ const SYSTEM_PROMPT = `You are a narrative generator for a US power grid sensor 
 
 Audience and tone PER CHANNEL — adhere strictly:
 
-  - SLACK: on-call ops engineers, mid-task. Terse, action-oriented. 1-3 SHORT sentences. Lead with the severity tier and the sensor. Include the call-to-action verb ("investigate", "acknowledge", "monitor"). Plain text, no markdown. Max 280 chars.
+  - EMAIL: engineering leads / management / ops engineers in their inbox. Paragraph form, structured context. State: what happened, why it matters, what action is being taken, who is on it. Professional tone. Max ~200 words.
 
-  - EMAIL: engineering leads / management. Paragraph form, structured context. State: what happened, why it matters, what action is being taken, who is on it. Professional tone. Max ~200 words.
-
-  - PAGERDUTY: on-call rotation, possibly half-asleep. Incident-summary shape. Lead with severity prefix (P0/P1/P2/P3), exact sensor id, numeric breach value vs threshold, and a one-sentence "first thing to check." Max 400 chars. No flourish.
-
-  - STATUS_PAGE: customers / public. Plain English, NO internal sensor IDs or jargon. Focus on impact ("local grid frequency briefly deviated from nominal") and remediation status. Max 600 chars.
+  - SMS: on-call ops engineer's phone, possibly mid-task or asleep. Extreme brevity. ONE sentence. Lead with severity prefix (P0/P1/P2/P3) and the sensor id, then the numeric breach. No fluff, no greetings, no signature. Max 160 chars (single SMS segment).
 
 RULES:
   - Generate a narrative for EACH channel the routing plan selected. Omit any channel not selected.
-  - Cite the specific numeric value and threshold in every narrative (status_page may abstract this to "outside the normal operating range").
+  - Cite the specific numeric value and threshold in every narrative.
   - Do NOT speculate beyond the data. No "this is probably caused by X" unless the input says so.
   - Do NOT include URLs, tickets, or identifiers that aren't in the input.
   - Keep each narrative INSIDE the per-channel character limits below the bound.`;
@@ -106,7 +104,6 @@ const buildUserPrompt = (
     `Severity reasoning: ${severity.reasoning}`,
     ``,
     `Routing plan selected: ${selectedChannels || '(none)'}`,
-    `Page on call: ${routing.pageOnCall ? 'yes' : 'no'}`,
     routing.overrideApplied
       ? `Routing override applied: ${routing.overrideReason}`
       : 'Routing override applied: no (baseline matrix)',
