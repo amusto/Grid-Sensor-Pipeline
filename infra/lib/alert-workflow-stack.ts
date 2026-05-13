@@ -19,6 +19,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sns from 'aws-cdk-lib/aws-sns';
+import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { Construct } from 'constructs';
@@ -65,6 +66,17 @@ export interface AlertWorkflowStackProps extends cdk.StackProps {
    * tests / dev runs can override with `cdk deploy -c ackWaitMinutes=1`.
    */
   ackWaitMinutes?: number;
+  /**
+   * Default email recipient subscribed to the alert SNS topic at
+   * deploy time. P9.2 — the one real channel for the case-routing
+   * layer. Additional viewers can be added ad-hoc at runtime via
+   * `scripts/add-demo-recipient.sh` without redeploying.
+   *
+   * Resolution order: CDK context (`alertEmail`) → this prop →
+   * the documented default below. Override at deploy time with
+   * `cdk deploy -c alertEmail=someone@example.com`.
+   */
+  alertEmail?: string;
 }
 
 export class AlertWorkflowStack extends cdk.Stack {
@@ -89,14 +101,44 @@ export class AlertWorkflowStack extends cdk.Stack {
       15;
 
     /**
-     * SNS topic — notification fan-out target. No subscriptions in
-     * code (per decision log P5 pre-flight 5); add via console or a
-     * separate stack when an on-call rotation exists.
+     * Default email recipient for the alert topic. Resolution order:
+     *   1. CDK context `alertEmail` (e.g., `cdk deploy -c alertEmail=...`)
+     *   2. Stack prop `alertEmail` (programmatic instantiation)
+     *   3. Documented default — Armando's Gmail+alias.
+     *
+     * Ad-hoc demo viewers add their own addresses at runtime via
+     * `scripts/add-demo-recipient.sh` — SNS topics accept new
+     * subscriptions any time, independent of CDK.
+     */
+    const alertEmail: string =
+      this.node.tryGetContext('alertEmail') ??
+      props.alertEmail ??
+      'armando.musto+alertreported@gmail.com';
+
+    /**
+     * SNS topic — notification fan-out target.
+     *
+     * P9.2 — one `EmailSubscription` is wired at deploy time so the
+     * topic has a working default recipient on first apply. The P5
+     * decision log originally said "no subscriptions in code"; that
+     * call was revisited on 2026-05-13 when verification showed the
+     * SNS topic existed but no subscription was ever wired, making
+     * the "email already works" assumption from the original Phase 9
+     * design log misleading. See `docs/decisions/phase-09-agentic-case-routing.md`
+     * Scope simplification + pre-flight 1.
+     *
+     * Additional viewers are added at runtime (no redeploy) via
+     * `scripts/add-demo-recipient.sh`. CDK manages the topic;
+     * subscriptions are operational.
      */
     const alertTopic = new sns.Topic(this, 'AlertTopic', {
       topicName: `${props.projectName}-alerts`,
       displayName: 'Grid Sensor Alert Notifications',
     });
+
+    alertTopic.addSubscription(
+      new snsSubscriptions.EmailSubscription(alertEmail),
+    );
 
     /**
      * Alert handler Lambda log group — explicit per the P3 lesson.
@@ -264,6 +306,15 @@ export class AlertWorkflowStack extends cdk.Stack {
       value: alertHandler.functionName,
       description: 'Alert handler Lambda function name',
       exportName: `${props.projectName}-alert-handler`,
+    });
+
+    new cdk.CfnOutput(this, 'AlertEmailRecipient', {
+      value: alertEmail,
+      description:
+        'Default email recipient subscribed to the alert topic. ' +
+        'Additional viewers added at runtime via ' +
+        'scripts/add-demo-recipient.sh do not appear here.',
+      exportName: `${props.projectName}-alert-email-recipient`,
     });
   }
 }

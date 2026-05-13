@@ -147,11 +147,50 @@ describe('AlertWorkflowStack template', () => {
     });
   });
 
+  describe('Email subscription (P9.2 — Option B)', () => {
+    it('wires an EmailSubscription with the default recipient', () => {
+      const template = synth();
+      template.hasResourceProperties('AWS::SNS::Subscription', {
+        Protocol: 'email',
+        Endpoint: 'armando.musto+alertreported@gmail.com',
+      });
+    });
+
+    it('honors the alertEmail CDK context override', () => {
+      const app = new App({
+        context: { alertEmail: 'custom-recipient@example.com' },
+      });
+      const stack = new AlertWorkflowStack(app, 'AlertWorkflow', {
+        env: { account: '123456789012', region: 'us-east-1' },
+        projectName: 'gsp-test',
+      });
+      const template = Template.fromStack(stack);
+      template.hasResourceProperties('AWS::SNS::Subscription', {
+        Protocol: 'email',
+        Endpoint: 'custom-recipient@example.com',
+      });
+    });
+
+    it('exposes the recipient via the AlertEmailRecipient CFN output', () => {
+      const template = synth();
+      template.hasOutput('AlertEmailRecipient', {
+        Export: { Name: 'gsp-test-alert-email-recipient' },
+      });
+    });
+  });
+
   describe('Stack outputs', () => {
     it('exports the state machine ARN for cross-stack reference', () => {
       const template = synth();
       template.hasOutput('AlertWorkflowArn', {
         Export: { Name: 'gsp-test-alert-workflow-arn' },
+      });
+    });
+
+    it('exports the alert topic ARN for runtime subscription helpers', () => {
+      const template = synth();
+      template.hasOutput('AlertTopicArn', {
+        Export: { Name: 'gsp-test-alert-topic-arn' },
       });
     });
   });
