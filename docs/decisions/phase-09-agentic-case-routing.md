@@ -19,20 +19,33 @@ knowingly accepted.**
 This decision log was originally drafted (2026-05-09) with a
 five-stub design — Slack, Jira, ServiceNow, PagerDuty, status page —
 plus one real channel (SES email). On 2026-05-13, before P9.1
-execution began, the scope was simplified to **one stubbed channel
-(SMS) + one real channel (SES email)**.
+execution began, **two related scope changes** landed:
 
-Rationale: two channels exercise the adapter pattern, the
-partial-success failure-isolation behavior, and the idempotency
-layer as completely as five would, with materially less surface to
-maintain. Additional channels remain a clean extension point — the
-`CHANNEL_HANDLERS` registry pattern in P9.4 is built explicitly to
-make future additions a one-file change. The original five-stub
-design isn't wrong; it's a larger version of the same pattern.
+1. **Channel inventory simplified** from five stubs + one real to
+   **one stub (SMS) + one real (email)**. Two channels exercise the
+   adapter pattern, the partial-success failure-isolation behavior,
+   and the idempotency layer as completely as five would, with
+   materially less surface to maintain. Additional channels remain
+   a clean extension point — the `CHANNEL_HANDLERS` registry pattern
+   in P9.4 is built explicitly to make future additions a one-file
+   change.
 
-Pre-flights below have been revised in place to reflect the simplified
-scope. Where the original five-channel content remains useful as a
-description of the extension point, it's noted inline.
+2. **Email implementation path changed from SES to SNS subscription.**
+   The original plan was a direct SES integration (verified sender
+   identity, IAM scoped to `ses:SendEmail`, HTML + plain-text bodies,
+   sandbox handling). Verification revealed that the P5 SNS topic
+   already exists in CDK; only an `EmailSubscription` was missing.
+   For POC scope, adding the subscription is a ~5-minute CDK change
+   that completes the "email works end-to-end" deliverable without
+   new IAM, new service surface, or sandbox-mode complexity. SES
+   remains the production-shape migration path when HTML formatting
+   or sender identity matter — and the adapter pattern guarantees
+   that swap is a single-file change in `src/lib/cases/channels/email.ts`.
+
+Pre-flights below have been revised in place to reflect both changes.
+Where original content remains useful as documentation of the
+extension point (additional channels, SES migration), it's noted
+inline.
 
 ---
 
@@ -46,11 +59,20 @@ implementations.
 
 **Decision.** Two channels in P9:
 
-- **Real: SES email.** Recipient configurable via CDK context
-  `alertEmail` (default: `armando.musto+alertreported@gmail.com`).
-  SES sandbox mode — only one verified recipient needed for the demo.
-  HTML and plain-text bodies. Production-shape: real bounce/complaint
-  topic wiring, real IAM grant scoped to the verified identity.
+- **Real: Email via SNS subscription.** Recipient configurable via
+  CDK context `alertEmail` (default:
+  `armando.musto+alertreported@gmail.com`). Implementation: add
+  `topic.addSubscription(new EmailSubscription(alertEmail))` to the
+  existing P5 alert-workflow SNS topic in
+  `infra/lib/alert-workflow-stack.ts`. Recipient confirms via the
+  AWS-sent confirmation link on first deploy; from that point every
+  publish to the topic lands in the inbox. Plain-text format (SNS
+  limitation). The email adapter at `src/lib/cases/channels/email.ts`
+  constructs the message body and publishes via the existing SNS
+  client — zero new IAM, zero new AWS service surface, zero sandbox
+  dance. SES remains the documented future migration when HTML
+  formatting or sender identity become real requirements; the
+  adapter interface guarantees that swap is a single-file change.
 
 - **Stub: SMS.** Single file at `src/lib/cases/channels/sms-stub.ts`.
   Accepts the same input shape a real SNS-SMS / Twilio call would
@@ -84,12 +106,21 @@ implement the same interface.
   vendor. Each adds setup complexity and ongoing credentials. Not
   worth it for portfolio scope.
 
-- **Email via SNS** (already exists in Phase 5). SNS email
-  subscription works but is plain-text only, adds an unsubscribe-link
-  dance, and uses the same SNS topic as the legacy alert path. Direct
-  SES gives full HTML formatting, clean sender identity, and a clear
-  architectural seam between the legacy SNS-only alerting (P5) and
-  the multi-channel case routing (P9).
+- **Direct SES email** (the original 2026-05-09 plan). New SES sender
+  identity, verified recipient, IAM grant scoped to `ses:SendEmail`,
+  sandbox handling, bounce/complaint topic wiring, HTML + plain-text
+  bodies. Stronger production-shape but adds AWS service surface for
+  a POC. SNS subscription does the same operational job (deliver
+  email on every alert) with one CDK line. SES is the documented
+  production migration path when HTML formatting or sender identity
+  become real concerns; the adapter pattern in
+  `src/lib/cases/channels/email.ts` is the swap point.
+
+  Note for historical context: the original 2026-05-09 draft of this
+  decision log claimed *"Email via SNS already exists in Phase 5."*
+  Verification on 2026-05-13 revealed the SNS topic exists but the
+  email subscription was never wired. The Option B path corrects
+  that — wiring the subscription is now part of P9.2 deliverables.
 
 **Why this hybrid.**
 
@@ -336,20 +367,46 @@ later — just a new sk value, no schema change required.
 
 ---
 
-## P9 pre-flight 6 — SES sender identity + verification
+## P9 pre-flight 6 — SNS subscription confirmation flow + future SES migration
 
-**Decision.** SES sender: a verified address chosen at deploy time
-via CDK context `senderEmail` (default: same as `alertEmail`). SES
-sandbox mode means both sender and recipient must be verified —
-sending to your own Gmail+alias means the same address verifies both
-sides.
+**Concept.** Document the two deploy-time concerns the email channel
+introduces today, plus the future migration path so the swap is
+captured before it's needed.
 
-**Production migration.** Out-of-sandbox SES requires AWS support
-approval. Once granted, sender remains verified-domain only;
-recipient list opens up. Documented in the learning note.
+**SNS subscription confirmation (deploy-time, today).** When the CDK
+stack deploys with the new `EmailSubscription(alertEmail)`, AWS
+sends a confirmation email to the recipient address. The recipient
+must click the confirmation link before SNS begins delivering. This
+is one-time per (topic, address) pair — re-deploys don't re-prompt.
 
-**Cost lens.** SES is $0.10 per 1k emails. POC volume is well under
-1k/month — fractional cents.
+Operational implication: first deploy after P9.2 lands needs a
+**manual confirmation click** before the demo will deliver email.
+Documented inline in the deploy runbook and the P9.6 smoke-test
+checklist.
+
+**Future SES migration (production-shape, when needed).** When
+HTML formatting, sender identity, or recipient-list management
+become real requirements, the swap is contained:
+
+1. Add SES sender identity verification in CDK
+   (`infra/lib/observability-stack.ts` or a new
+   `notification-stack.ts`).
+2. Replace the body of `src/lib/cases/channels/email.ts` with a
+   `SendEmailCommand` via the SES client. The
+   `Promise<ChannelResult>` interface is unchanged.
+3. Update IAM grants in the alert-handler task role to add
+   `ses:SendEmail` on the verified identity ARN, scoped tight.
+4. SES sandbox-out-of-sandbox is a separate AWS support request;
+   sender becomes verified-domain only, recipient list opens up.
+5. Dispatcher (P9.4), idempotency layer (P9.3), narrative generator,
+   routing strategy, SMS stub, and tests are all unchanged.
+
+**This is what the adapter pattern is for.** The migration is named
+in writing, scoped to one file, and free of cross-cutting changes.
+
+**Cost lens.** SNS publish: $0.50 per 1M publishes — effectively
+zero at POC volume. SES (when migrated): $0.10 per 1k emails —
+also negligible at POC volume.
 
 ---
 
@@ -390,16 +447,20 @@ P9.5.
 
 Three durable patterns this phase encodes:
 
-1. **Uniform adapter interface across real and stubbed integrations.**
-   One channel is a real SES email integration; the other is a
-   synthetic SMS stub. Both implement the same
-   `Promise<ChannelResult>` signature, both register in the same
-   `CHANNEL_HANDLERS` map, both are dispatched the same way by the
-   LangGraph "execute tools" node. The dispatcher doesn't know
-   which is real. Adding a future channel (Slack, PagerDuty, Jira,
-   etc.) is one new file + one map entry, with the partial-success
-   failure isolation and idempotency-aware persistence free.
-   **The architecture is the lesson, not the channel count.**
+1. **Uniform adapter interface across real and stubbed integrations,
+   and across implementation choices within the real channel.** One
+   channel is a real email integration (via the existing P5 SNS
+   topic + a new email subscription); the other is a synthetic SMS
+   stub. Both implement the same `Promise<ChannelResult>` signature,
+   both register in the same `CHANNEL_HANDLERS` map, both are
+   dispatched the same way by the LangGraph "execute tools" node.
+   The dispatcher doesn't know which is real, and it doesn't know
+   the email is going via SNS rather than SES. Adding a future
+   channel (Slack, PagerDuty, Jira, etc.) is one new file + one map
+   entry. Migrating the email implementation from SNS to SES later
+   is one file (`src/lib/cases/channels/email.ts`) — the dispatcher
+   doesn't change. **The architecture is the lesson, not the
+   channel count, and not the specific AWS service either.**
 
 2. **Idempotency follows the natural key, wherever the action
    happens.** Phase 2 dedups DynamoDB writes from the Kinesis
