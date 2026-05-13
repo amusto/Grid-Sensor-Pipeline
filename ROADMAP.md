@@ -15,9 +15,9 @@ elapsed time depends on focus and velocity.
 
 ## Current state
 
-**Today:** Day 5 (2026-05-12)
-**Active phase:** **Phase 8 — AI/ML Integration ✅** (all 6 sub-phases shipped). Currently in a **pre-Phase 9 interlude** — capturing portfolio infrastructure, cross-project patterns, and articulation practice material. Day 5 transitions into a parent-folder workspace to integrate the Grid Sensor card into the personal portfolio site (amusto.github.io). Phase 9 (agentic case routing) is next as core work.
-**Last shipped:** Issue #1 — alert workflow escalation path Zod validation fix. A latent Phase 5 bug surfaced during P8.5 testing: Step Functions' `resultPath: $.alert` appended a field to the workflow state that the alert handler's `.strict()` Zod validator rejected on the escalation invocation. Fix: `extractSourceEvent` projects `event.context` to only the SensorEvent fields before validation. Verified live: 12 breach-driven executions completed the full notify → 15-min wait → escalate → resolve path with `SUCCEEDED` status (vs 100% `FAILED` before the fix). GitHub issue #1 opened with full root cause + Mermaid state-shape diagram + acceptance criteria; closed by the commit. Issue + fix is the cleanest "describe a subtle bug you found in production" interview story to surface to date.
+**Today:** Day 6 (2026-05-13)
+**Active phase:** **Phase 9 — Agentic case routing 🚧** (1/6 sub-phases shipped). P9.1 retrofit + SMS stub complete on 2026-05-13; next up is P9.2 (email channel via SNS subscription) then the two knowledge-anchor sub-phases P9.3 (idempotency-aware cases table) and P9.4 (LangGraph tool-execution node + partial-success dispatcher).
+**Last shipped:** **P9.1 — SMS stub channel adapter + P8 schema retrofit.** Routing-strategy and narrative-generator Zod schemas trimmed from the original 4-channel design `{slack, pagerduty, email, status_page}` to the simplified 2-channel design `{email, sms}`; `pageOnCall` collapsed into `channels.sms` (SMS *is* the paging mechanism). `BASELINE_MATRIX` rewritten so P0/P1 fire both channels and P2/P3 fire email only. New `src/lib/cases/` tree introduced with the uniform `Promise<ChannelResult>` interface every channel adapter implements — types, synthetic-ID generator (`MOCK-sms-{epochMs}-{hash6}`), the SMS stub with structured `would_call` Powertools logging, and the `CHANNEL_HANDLERS` registry (currently `Partial<Record<...>>`; tighten when P9.2 adds email). Six test files updated or added; all suites green locally. Two commits: P8 retrofit + SMS stub kept separate for clean blame.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
 ---
@@ -27,9 +27,9 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-Core (P1-P12):     [██████████████░░░░░░] 72%   (49 / 68 sub-phases)
+Core (P1-P12):     [██████████████░░░░░░] 74%   (50 / 68 sub-phases)
 Stretch (P13-P14): [░░░░░░░░░░░░░░░░░░░░]  0%   ( 0 / 10 sub-phases)
-Combined:          [█████████████░░░░░░░] 63%   (49 / 78 sub-phases)
+Combined:          [█████████████░░░░░░░] 64%   (50 / 78 sub-phases)
 ```
 
 > **Core** is the MVP — what reviewers expect to see for the JD scope.
@@ -59,7 +59,7 @@ Combined:          [█████████████░░░░░░░
 | 6 | DLQ + observability          | `██████████` | 100% | 6/6 | ✅ |
 | 7 | Query API                    | `██████████` | 100% | 6/6 | ✅ |
 | 8 | AI/ML Integration            | `██████████` | 100% | 6/6 | ✅ |
-| 9 | Agentic case routing         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
+| 9 | Agentic case routing         | `██░░░░░░░░` |  17% | 1/6 | 🚧 |
 | 10 | Datadog bridge              | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
 | 11 | Polish & teardown           | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
 | 12 | Live demo dashboard         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
@@ -543,7 +543,7 @@ existing `NotifyOps` task — for agentic decisioning.
 
 **Sub-phases & deliverables:**
 
-- ⬜ **P9.1** SMS stub channel adapter + P8 schema retrofit — trim `routing-strategy.ts` and `narrative-generator.ts` Zod schemas + `BASELINE_MATRIX` from `{slack, pagerduty, email, status_page}` to `{email, sms}`; update unit tests. Then add `src/lib/cases/channels/sms-stub.ts` with `callSmsStub(input: SmsCallInput): Promise<ChannelResult>` — logs a structured `would_call` entry via Powertools Logger + returns a synthetic `MOCK-sms-{epochMs}-{hash6}` case ID. Uniform interface so P9.4's dispatcher iterates without special-casing.
+- ✅ **P9.1** SMS stub channel adapter + P8 schema retrofit — `routing-strategy.ts` and `narrative-generator.ts` Zod schemas + `BASELINE_MATRIX` trimmed from `{slack, pagerduty, email, status_page}` to `{email, sms}`; `pageOnCall` collapsed into `channels.sms`. New `src/lib/cases/` tree with `types.ts`, `case-id.ts` (synthetic `MOCK-sms-{epochMs}-{hash6}` generator), `channels/sms-stub.ts` (Powertools `would_call` logging + `Promise<ChannelResult>` return), and `channels/index.ts` (CHANNEL_HANDLERS registry). Six test files updated or added — routing-strategy, narrative-generator, alert-handler, alert-graph, and a new sms-stub suite. All green. Two commits, retrofit + greenfield kept separate.
 - ⬜ **P9.2** Email channel via SNS subscription — add `topic.addSubscription(new EmailSubscription(alertEmail))` to the existing P5 alert-workflow SNS topic in `infra/lib/alert-workflow-stack.ts`; recipient configurable via CDK context `alertEmail` (default `armando.musto+alertreported@gmail.com`). Write `src/lib/cases/channels/email.ts` adapter that constructs the message body and publishes via the existing SNS client — same `Promise<ChannelResult>` interface as the SMS stub; zero new IAM, zero new AWS service surface. Document the one-time subscription confirmation click in the deploy runbook. SES migration deferred to a future production hardening pass — adapter pattern guarantees it's a single-file change in `email.ts`.
 - ⬜ **P9.3** Idempotency-aware case persistence — new cases table (pk: `${sensorId}#${timestamp}#${readingType}`, sk: `caseSystem`, attributes: `caseId`, `status`, `createdAt`, `updatedAt`, `externalUrl`); `ConditionExpression: 'attribute_not_exists(pk)'` write before tool execution; UPDATE on duplicate (Step Functions retry) instead of CREATE. Same conditional-write pattern as P2 readings dedup, applied at a new boundary. **Knowledge-anchor file** per `shared/practice/collaboration-mode.md`.
 - ⬜ **P9.4** LangGraph tool-execution node + failure isolation — new node 4 in the alert handler graph: iterates `CHANNEL_HANDLERS` over routing-plan selections, runs adapters in parallel via `Promise.allSettled`, aggregates results into `{ delivered: ChannelResult[], failed: ChannelResult[], skipped: CaseSystem[] }`. Step Functions continues even when one channel errors; failures emit `AlertChannelFailures` metric dimensioned by `channel`. **Knowledge-anchor file** per `shared/practice/collaboration-mode.md` — the `delivered`/`failed`/`skipped` shape is the file an interviewer would dig into hardest.
@@ -1250,3 +1250,91 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     dashboard) still ⬜. Sequence is now: portfolio integration on
     the new workspace → P9 implementation → P10-P12 close-out →
     interview prep deep-dives.
+
+- **Day 6** (2026-05-13) — **Portfolio integration shipped + Phase 9
+  opened.** Day opened in the new parent-folder workspace
+  (`portfolio-projects/`) with read/write across Grid-Sensor-Pipeline,
+  amusto.github.io, and a newly-introduced `shared/` private repo.
+  - **Portfolio integration to amusto.github.io.** Grid Sensor Pipeline
+    card landed as the new top hero on the Projects section (rust-
+    accent treatment reverted after the user disliked it — back to
+    solid ink background per the original design). Vertical-center
+    fix on the right column of the hero card. Hyperscale Ops POC
+    card added at position 2 with two captioned UI screenshots
+    (Default Dashboard, Ports Section) — the second flagship project
+    on the page, deliberately a different stack (Java + Spring Boot +
+    Cloudscape + DynamoDB single-table + CDK Java + ECS Fargate) to
+    demonstrate breadth alongside Grid Sensor's TypeScript +
+    serverless flagship. Repo rename `greenfield-java-react-starter`
+    → `Hyperscale-Dashboard-POC` reflected in card link.
+  - **System overview navigation fix.** Mermaid `click` directives
+    in `docs/diagrams/system-overview.md` were resolving relative
+    URLs against the iframe origin (`viewscreen.githubusercontent.com`)
+    rather than the parent github.com page. Seven directives updated
+    to absolute GitHub blob URLs; click-to-drill-in now works on the
+    rendered diagram. Plaintext markdown links at the bottom of the
+    file left unchanged (those resolve correctly against the outer
+    renderer).
+  - **`shared/` private repo introduced.** Cross-project writing +
+    practice docs lifted out of `Grid-Sensor-Pipeline/docs/_private/`
+    into a new sibling repo at `portfolio-projects/shared/`. Three
+    standing career-level docs migrated: `articulation-practice.md`,
+    `collaboration-mode.md`, `cross-project-patterns.md`. Breadcrumb
+    stubs at the original location keep existing references from
+    404'ing. New writing pipeline scaffold under
+    `shared/articles/{drafts,published}/` with `ideas.md` as a flat
+    backlog. First inhabitant of `articles/drafts/` is the
+    bridge-brokers-at-boundaries piece, with its SVG + PNG header.
+    Private GitHub repo `portfolio-writing` created and pushed.
+  - **First public technical article shipped.** *"I Built the Same
+    Pattern Three Times Before I Could Name It"* published on
+    LinkedIn Pulse. The article compresses the cross-project bridge-
+    brokers pattern (Aireon ADS-B → Azure Event Hubs, Northstrat
+    ActiveMQ → Kafka, Grid Sensor MQTT → Kinesis) into ~250 words +
+    a five-boundary-convergence framing + the *"translation lives
+    at the boundary"* takeaway. Custom 1200×627 header image
+    generated as SVG + rasterized to PNG. **First articulation-
+    practice deliverable post-Torus** — the publishing cadence
+    `articulation-practice.md` calls for now has its first artifact.
+  - **Reconciliation: Aireon row.** The published article claims
+    *Azure Event Hubs* for Aireon, not Kafka as previously recorded
+    in `shared/practice/cross-project-patterns.md`. The private
+    source-of-truth doc updated to match what shipped (three
+    surgical edits — comparison table, detailed paragraph, and
+    interview-defense quote).
+  - **Phase 9 scope simplified twice in one day.**
+    (1) **Channel inventory simplified** from five stubs + one real
+    to one stub (SMS) + one real (email). Two channels exercise the
+    adapter pattern, partial-success behavior, and idempotency
+    layer as completely as five would. Additional channels remain
+    a clean extension point.
+    (2) **Email implementation path changed from direct SES to
+    SNS subscription.** Verification of the P5 alert-workflow stack
+    revealed the SNS topic exists but no `EmailSubscription` was
+    ever wired — the original decision log's *"Email via SNS
+    already exists in Phase 5"* claim was misleading. Pivot to
+    Option B: add the missing `EmailSubscription` as P9.2; SES
+    deferred to a documented future migration. ROADMAP + decision
+    log (`phase-09-agentic-case-routing.md`) revised in place to
+    match.
+  - **P9.1 shipped — schema retrofit + SMS stub.** Eleven files
+    touched. Routing and narrative schemas trimmed to
+    `{email, sms}`; `pageOnCall` collapsed into `channels.sms`;
+    `BASELINE_MATRIX` rewritten. New `src/lib/cases/` tree with
+    `types.ts`, `case-id.ts`, `channels/sms-stub.ts`,
+    `channels/index.ts`. Six test files updated or added; all green.
+    Two commits, retrofit + SMS stub kept separate for clean blame.
+    The architectural lesson: the uniform `Promise<ChannelResult>`
+    interface is now demonstrated by one real-style adapter shape
+    (SMS stub) + the discipline of leaving the registry open for
+    P9.2's email adapter. *Adding a future channel later is verified
+    to be a one-file change.*
+  - **Next up.** P9.2 (email channel via SNS subscription on the
+    existing P5 topic) — non-anchor, can land quickly. Then the
+    two knowledge-anchor sub-phases: P9.3 (idempotency-aware cases
+    table) and P9.4 (LangGraph tool-execution node + partial-success
+    dispatcher). Then P9.5 (decision log update + new learning note
+    `case-management-patterns.md` with the hypothetical-Slack-adapter
+    file-diff sketch from pre-flight 7) and P9.6 (deploy + smoke
+    test, including the first-deploy SNS subscription confirmation
+    click).
