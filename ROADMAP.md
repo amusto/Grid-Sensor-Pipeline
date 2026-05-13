@@ -146,7 +146,7 @@ inherit and must not violate it.
 | 6 | DLQ + observability | 🚧 | DLQ inspector Lambda · CloudWatch dashboard · alarms (DLQ depth, P99, SF failures) | [`docs/decisions/phase-06-dlq-observability.md`](docs/decisions/phase-06-dlq-observability.md) |
 | 7 | Query API | 🚧 | API Gateway + query Lambda · `GET /sensors/{id}/readings?from=&to=` | [`docs/decisions/phase-07-query-api.md`](docs/decisions/phase-07-query-api.md) |
 | 8 | AI/ML Integration | ⏭️ | Bedrock-powered narratives · LangChain prompt templates · LangGraph agentic flow inside alert handler · MCP server with read-only query tools | [`docs/decisions/phase-08-ai-ml-integration.md`](docs/decisions/phase-08-ai-ml-integration.md) |
-| 9 | Agentic case routing | ⬜ | Stubbed Slack/Jira/ServiceNow/PagerDuty/status-page tools · real SES email channel · idempotency-aware case persistence · routing matrix as data | [`docs/decisions/phase-09-agentic-case-routing.md`](docs/decisions/phase-09-agentic-case-routing.md) |
+| 9 | Agentic case routing | ⬜ | Real SES email channel + stubbed SMS channel · uniform adapter interface · idempotency-aware case persistence · partial-success failure isolation across channels | [`docs/decisions/phase-09-agentic-case-routing.md`](docs/decisions/phase-09-agentic-case-routing.md) (needs revision to match simplified scope) |
 | 10 | Datadog bridge | ⬜ | Datadog Lambda Extension layer wired (or design-doc-only if not deployed) | _pending_ |
 | 11 | Polish & teardown | ⬜ | README revision · architecture diagram · cost analysis · `cdk destroy` verification | _pending_ |
 | 12 | Live demo dashboard | ⬜ | CloudWatch (CDK, quick win) · Grafana (depth + Aireon experience callback) · simulator trigger button · portfolio embed | _pending_ |
@@ -537,47 +537,29 @@ existing `NotifyOps` task — for agentic decisioning.
 
 ## Phase 9 — Agentic case routing ⬜
 
-**Goal.** Extend Phase 8's agentic flow with multi-channel routing
-across Slack, Jira, ServiceNow, PagerDuty, and a status page (all
-stubbed). Add **one real channel** — SES email — to demonstrate
-production-shape integration end-to-end. Idempotency-aware case
-persistence prevents duplicate tickets on Step Functions retry.
+**Goal.** Extend Phase 8's agentic flow with two-channel notification routing — **real SES email + stubbed SMS** — backed by idempotency-aware case persistence so Step Functions retries don't duplicate tickets. The architectural lesson is the **uniform adapter interface**: each channel implements the same `Promise<ChannelResult>` shape, the LangGraph dispatch loop is one map iteration over a `CHANNEL_HANDLERS` registry, and adding a future channel (Slack, PagerDuty, Jira, ServiceNow, status page) is a single new file + one map entry with the partial-success failure-isolation behavior free.
+
+**Scope note.** The original Phase 9 design called for five stubbed channels (Slack, Jira, ServiceNow, PagerDuty, status page) plus one real (SES email). Scope simplified on 2026-05-13 to one stub (SMS) plus one real (SES email). Rationale: two channels exercise the adapter pattern, partial-success behavior, and idempotency layer as completely as five would, with materially less surface to maintain. Additional channels remain a clean extension point — the registry pattern in P9.4 is built explicitly to make future additions a one-file change. Decision log `phase-09-agentic-case-routing.md` pre-flight 1 needs revision to match.
 
 **Sub-phases & deliverables:**
 
-- ⬜ **P9.1** Stub case-tracker tools — five MCP-style tools (Slack,
-  Jira, ServiceNow, PagerDuty, status page); each writes to
-  CloudWatch logs + a new DynamoDB cases table with synthetic IDs
-- ⬜ **P9.2** Real SES email channel — `send_email` tool; SES sandbox
-  with verified `armando.musto+alertreported@gmail.com` (configurable
-  via CDK context `alertEmail`); HTML and plain-text bodies
-- ⬜ **P9.3** Idempotency-aware case persistence — new cases table
-  (pk: `${sensorId}#${timestamp}#${readingType}`, sk: caseSystem);
-  `attribute_not_exists(pk)` write before tool execution; UPDATE on
-  duplicate (e.g., Slack thread reply) instead of CREATE
-- ⬜ **P9.4** Tool-call failure isolation — partial-success result
-  from LangGraph "execute tools" node; `failed[]`/`delivered[]`/
-  `skipped[]` arrays; Step Functions continues; channel failures
-  emit `AlertChannelFailures` metric
-- ⬜ **P9.5** Decision log + new learning note `case-management-
-  patterns.md`; routing matrix as data (severity → channels);
-  LLM-override pattern with audit logging
-- ⬜ **P9.6** Deploy + smoke test — P0 breach triggers real email +
-  stubbed Slack/Jira/PagerDuty entries with proper case IDs;
-  duplicate breach reuses existing case (verified via DynamoDB
-  cases table)
+- ⬜ **P9.1** SMS stub channel adapter + P8 schema retrofit — trim `routing-strategy.ts` and `narrative-generator.ts` Zod schemas + `BASELINE_MATRIX` from `{slack, pagerduty, email, status_page}` to `{email, sms}`; update unit tests. Then add `src/lib/cases/channels/sms-stub.ts` with `callSmsStub(input: SmsCallInput): Promise<ChannelResult>` — logs a structured `would_call` entry via Powertools Logger + returns a synthetic `MOCK-sms-{epochMs}-{hash6}` case ID. Uniform interface so P9.4's dispatcher iterates without special-casing.
+- ⬜ **P9.2** Real SES email channel — `src/lib/cases/channels/email.ts` with the same `Promise<ChannelResult>` return shape; SES sandbox with verified `armando.musto+alertreported@gmail.com` (configurable via CDK context `alertEmail`); HTML and plain-text bodies; bounce/complaint topic wiring; IAM grant for `ses:SendEmail` scoped to the verified identity.
+- ⬜ **P9.3** Idempotency-aware case persistence — new cases table (pk: `${sensorId}#${timestamp}#${readingType}`, sk: `caseSystem`, attributes: `caseId`, `status`, `createdAt`, `updatedAt`, `externalUrl`); `ConditionExpression: 'attribute_not_exists(pk)'` write before tool execution; UPDATE on duplicate (Step Functions retry) instead of CREATE. Same conditional-write pattern as P2 readings dedup, applied at a new boundary. **Knowledge-anchor file** per `shared/practice/collaboration-mode.md`.
+- ⬜ **P9.4** LangGraph tool-execution node + failure isolation — new node 4 in the alert handler graph: iterates `CHANNEL_HANDLERS` over routing-plan selections, runs adapters in parallel via `Promise.allSettled`, aggregates results into `{ delivered: ChannelResult[], failed: ChannelResult[], skipped: CaseSystem[] }`. Step Functions continues even when one channel errors; failures emit `AlertChannelFailures` metric dimensioned by `channel`. **Knowledge-anchor file** per `shared/practice/collaboration-mode.md` — the `delivered`/`failed`/`skipped` shape is the file an interviewer would dig into hardest.
+- ⬜ **P9.5** Decision log revision + new learning note `case-management-patterns.md`; documents the scope simplification (five stubs → one stub, why), the uniform adapter interface, the registry pattern as extension point, the idempotency layer as the P2 dedup pattern reapplied at a new boundary, and the partial-success failure isolation as a generalization of P2 batchItemFailures applied to fan-out instead of fan-in.
+- ⬜ **P9.6** Deploy + smoke test — P0 breach triggers real email delivery (verified in inbox) + structured `would_call` SMS log entry, both linked to the same case record in the cases table via the natural composite key; duplicate breach (same `sensorId+timestamp+readingType`) verified to UPDATE the existing rows rather than CREATE new ones; simulated email failure (e.g., misconfigured SES identity) verified to NOT block the SMS path and to emit `AlertChannelFailures{channel=email}` metric.
 
 **Acceptance criteria:**
-- A breach produces a real email at the configured address.
-- Stubbed channels log structured "would-call" entries with mock
-  case IDs.
-- Same breach repeated produces UPDATEs, not duplicates.
-- One channel failing (simulated) doesn't block the others.
+- A P0 breach produces a real email at the configured address.
+- The SMS stub logs a structured `would_call` entry with a `MOCK-sms-` case ID linked to the same case-table row.
+- Same breach repeated produces UPDATEs, not duplicate rows in the cases table.
+- One channel failing (simulated) doesn't block the other; the failure surfaces as a metric, not an exception.
+- Adding a new channel later (Slack, PagerDuty, etc.) is verified to require only a new adapter file + one map entry in `CHANNEL_HANDLERS`, with no changes to the dispatcher, the routing logic, or the idempotency layer. (Confirm by sketching the file diff for a hypothetical Slack adapter in the decision log.)
 
-**Dependencies:** Phase 8 (LangGraph node 4 is what calls these
-tools).
+**Dependencies:** Phase 8 (routing-strategy + narrative-generator schemas, both retrofitted in P9.1's first task). LangGraph node 4 (added in P9.4) is what calls these adapters.
 
-**Decision log:** [`docs/decisions/phase-09-agentic-case-routing.md`](docs/decisions/phase-09-agentic-case-routing.md)
+**Decision log:** [`docs/decisions/phase-09-agentic-case-routing.md`](docs/decisions/phase-09-agentic-case-routing.md) — pre-flight 1 (channel inventory) needs revision to reflect the simplified `{email, sms}` scope. Re-run when P9.1 starts.
 
 ---
 
@@ -871,10 +853,11 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
   (LangChain/LangGraph), and tool integrations (Model Context
   Protocol)."* Inserted two new CORE phases: **Phase 8 — AI/ML
   Integration** (Bedrock + LangChain + LangGraph + MCP server) and
-  **Phase 9 — Agentic case routing** (stubbed Slack/Jira/ServiceNow/
-  PagerDuty/status-page tools + one real SES email channel +
-  idempotency-aware case persistence). Both decision logs written
-  with cost lens. Old P8-P12 renumbered to P10-P14. JD saved to
+  **Phase 9 — Agentic case routing** (originally five stubbed channels
+  + one real SES email channel; scope simplified on 2026-05-13 to one
+  stub (SMS) + one real (email) — same architectural pattern with
+  less surface to maintain; idempotency-aware case persistence
+  preserved). Both decision logs written with cost lens. Old P8-P12 renumbered to P10-P14. JD saved to
   a gitignored note under `docs/_private/`. Honest
   scope accounting: progress drops from 59% to 50% as denominator
   grows from 66 to 78 sub-phases. Architecture decision worth
