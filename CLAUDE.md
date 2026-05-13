@@ -287,4 +287,4 @@ This project ships to [amusto.github.io](https://github.com/amusto/amusto.github
 - [`docs/_private/articulation-practice.md`](docs/_private/articulation-practice.md) — articulation-as-skill practice loop.
 - [`docs/_private/collaboration-mode.md`](docs/_private/collaboration-mode.md) — the knowledge-anchor pattern for AI-assisted development.
 
-These live in this project's `_private/` for now. When other projects need them, they should be lifted to a `portfolio-projects/.shared/` (or equivalent) location so they apply across all projects without duplication.
+These have been lifted to `portfolio-projects/shared/practice/` as of 2026-05-13. Breadcrumb stubs remain in `_private/` so existing references don't 404; update inbound links to the new location.
