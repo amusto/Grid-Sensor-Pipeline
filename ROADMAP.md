@@ -15,9 +15,9 @@ elapsed time depends on focus and velocity.
 
 ## Current state
 
-**Today:** Day 6 (2026-05-13)
-**Active phase:** **Phase 9 — Agentic case routing 🚧** (2/6 sub-phases shipped). P9.1 + P9.2 complete on 2026-05-13; next are the two knowledge-anchor sub-phases — **P9.3** (idempotency-aware cases table) and **P9.4** (LangGraph tool-execution node + partial-success dispatcher) — then P9.5 (decision log update + learning note) and P9.6 (deploy + smoke close-out).
-**Last shipped:** **P9.2 — Email channel via SNS subscription + demo-recipient helper.** Added `EmailSubscription` to the existing P5 alert-workflow SNS topic (recipient configurable via CDK context `alertEmail`, default `armando.musto+alertreported@gmail.com`); new `AlertEmailRecipient` CFN output for post-deploy visibility. New `src/lib/cases/channels/email.ts` adapter implementing the same `Promise<ChannelResult>` shape as the SMS stub — publishes via the existing SNS client, returns the real `MessageId` as `caseId`, catches publish errors and returns `status: 'failed'` rather than throwing (matches the always-resolves contract). `CHANNEL_HANDLERS` registry tightened from `Partial<Record<...>>` to full `Record<...>`. New `scripts/add-demo-recipient.sh` adds ad-hoc viewers at runtime without redeploy (resolves topic ARN from CFN outputs, falls back to `list-topics` name-grep, runs `aws sns subscribe`, walks the recipient through the confirmation flow). **Verified end-to-end live:** `npx ts-node scripts/simulate.ts --count 5 --breach` triggered two breach-grade readings → two Step Functions executions → two emails landed in inbox with `[P0]`/`[P1]` subjects. Two commits, infra+helper kept separate from application adapter+tests for clean blame.
+**Today:** Day 7 (2026-05-14)
+**Active phase:** **Phase 9 — Agentic case routing 🚧** (3/6 sub-phases shipped). P9.1 + P9.2 + P9.3 complete; next is **P9.4** — the second knowledge-anchor file (LangGraph tool-execution node + partial-success dispatcher), where the cases repository from P9.3 finally gets exercised at runtime. Then P9.5 (decision log update + learning note `case-management-patterns.md` with the hypothetical-Slack-adapter file-diff sketch from pre-flight 7) and P9.6 (deploy + smoke close-out).
+**Last shipped:** **P9.3 — Idempotency-aware cases repository + cases DynamoDB table.** First knowledge-anchor file of Phase 9. The `attribute_not_exists(pk)` conditional-write idempotency pattern from P2's readings dedup, now applied at a new boundary: the agentic-tool dispatch layer. New `src/lib/cases/case-repository.ts` with three types (`CaseNaturalKey`, `CaseChannelRow`, `CaseMetadataRow`), the `buildCasePk` helper, and a `CaseRepository` class with find/create/update methods for both row types — six methods, atomic + idempotent on creates, dynamic `UpdateExpression` construction with reserved-word aliasing (`#status`) and immutable-field skipping. New cases table in `storage-stack.ts` (pk=composite natural key, sk=`'__metadata__'` or `caseSystem`, pay-per-request, PITR enabled, no TTL, `RemovalPolicy.DESTROY`). 14 unit tests covering all repository methods, `ConditionalCheckFailedException` propagation, reserved-word handling, and immutable-field defense-in-depth. **Mixed-mode anchor work:** Armando implemented `buildCasePk`, `findChannelCase`, `createChannelCase` from the scaffolded contract; review caught one TypeScript error (incorrect type annotation on the stored item), one redundant-validation pattern, and a naming-convention issue; Claude took over the remaining four methods + all test bodies after fatigue signal.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
 ---
@@ -27,9 +27,9 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-Core (P1-P12):     [███████████████░░░░░] 75%   (51 / 68 sub-phases)
+Core (P1-P12):     [███████████████░░░░░] 76%   (52 / 68 sub-phases)
 Stretch (P13-P14): [░░░░░░░░░░░░░░░░░░░░]  0%   ( 0 / 10 sub-phases)
-Combined:          [█████████████░░░░░░░] 65%   (51 / 78 sub-phases)
+Combined:          [█████████████░░░░░░░] 67%   (52 / 78 sub-phases)
 ```
 
 > **Core** is the MVP — what reviewers expect to see for the JD scope.
@@ -59,7 +59,7 @@ Combined:          [█████████████░░░░░░░
 | 6 | DLQ + observability          | `██████████` | 100% | 6/6 | ✅ |
 | 7 | Query API                    | `██████████` | 100% | 6/6 | ✅ |
 | 8 | AI/ML Integration            | `██████████` | 100% | 6/6 | ✅ |
-| 9 | Agentic case routing         | `███░░░░░░░` |  33% | 2/6 | 🚧 |
+| 9 | Agentic case routing         | `█████░░░░░` |  50% | 3/6 | 🚧 |
 | 10 | Datadog bridge              | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
 | 11 | Polish & teardown           | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
 | 12 | Live demo dashboard         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
@@ -545,7 +545,7 @@ existing `NotifyOps` task — for agentic decisioning.
 
 - ✅ **P9.1** SMS stub channel adapter + P8 schema retrofit — `routing-strategy.ts` and `narrative-generator.ts` Zod schemas + `BASELINE_MATRIX` trimmed from `{slack, pagerduty, email, status_page}` to `{email, sms}`; `pageOnCall` collapsed into `channels.sms`. New `src/lib/cases/` tree with `types.ts`, `case-id.ts` (synthetic `MOCK-sms-{epochMs}-{hash6}` generator), `channels/sms-stub.ts` (Powertools `would_call` logging + `Promise<ChannelResult>` return), and `channels/index.ts` (CHANNEL_HANDLERS registry). Six test files updated or added — routing-strategy, narrative-generator, alert-handler, alert-graph, and a new sms-stub suite. All green. Two commits, retrofit + greenfield kept separate.
 - ✅ **P9.2** Email channel via SNS subscription — `EmailSubscription` wired on the P5 alert-workflow SNS topic (recipient via CDK context `alertEmail`, default `armando.musto+alertreported@gmail.com`); `AlertEmailRecipient` CFN output for visibility. `src/lib/cases/channels/email.ts` adapter publishes via the existing SNS client, returns SNS `MessageId` as `caseId`, catches publish errors and returns `status: 'failed'` (always-resolves contract matching the SMS stub). `CHANNEL_HANDLERS` registry tightened to full `Record<CaseSystem, ChannelHandler>`. New `scripts/add-demo-recipient.sh` adds ad-hoc viewers at runtime without redeploy. Six files touched (3 infra + helper, 3 application). Verified end-to-end live: `simulate.ts --count 5 --breach` produced 2 Step Functions executions and 2 alert emails landed in inbox.
-- ⬜ **P9.3** Idempotency-aware case persistence — new cases table (pk: `${sensorId}#${timestamp}#${readingType}`, sk: `caseSystem`, attributes: `caseId`, `status`, `createdAt`, `updatedAt`, `externalUrl`); `ConditionExpression: 'attribute_not_exists(pk)'` write before tool execution; UPDATE on duplicate (Step Functions retry) instead of CREATE. Same conditional-write pattern as P2 readings dedup, applied at a new boundary. **Knowledge-anchor file** per `shared/practice/collaboration-mode.md`.
+- ✅ **P9.3** Idempotency-aware case persistence — new `cases` DynamoDB table in `storage-stack.ts` (pk=`${sensorId}#${timestamp}#${readingType}`, sk=`'__metadata__'` or `caseSystem`, pay-per-request, PITR enabled, no TTL, `RemovalPolicy.DESTROY`). New `src/lib/cases/case-repository.ts` (anchor) with three row types, `buildCasePk` helper, and a `CaseRepository` class exposing find/create/update for both row types. Atomic + idempotent on creates via `ConditionExpression: 'attribute_not_exists(pk)'`; `ConditionalCheckFailedException` propagates to the caller as the dispatcher's "this is a retry" signal. Dynamic `UpdateExpression` construction with `#status` reserved-word aliasing and immutable-field skipping (`createdAt`, `channel`). 14 unit tests cover all paths including reserved-word handling + immutable-field defense-in-depth. Mixed-mode anchor work: Armando implemented `buildCasePk`, `findChannelCase`, `createChannelCase`; review caught a TypeScript type-annotation error + redundant validation + naming convention; Claude completed `updateChannelCase`, find/create/update for metadata, and all test bodies.
 - ⬜ **P9.4** LangGraph tool-execution node + failure isolation — new node 4 in the alert handler graph: iterates `CHANNEL_HANDLERS` over routing-plan selections, runs adapters in parallel via `Promise.allSettled`, aggregates results into `{ delivered: ChannelResult[], failed: ChannelResult[], skipped: CaseSystem[] }`. Step Functions continues even when one channel errors; failures emit `AlertChannelFailures` metric dimensioned by `channel`. **Knowledge-anchor file** per `shared/practice/collaboration-mode.md` — the `delivered`/`failed`/`skipped` shape is the file an interviewer would dig into hardest.
 - ⬜ **P9.5** Decision log revision + new learning note `case-management-patterns.md`; documents the scope simplification (five stubs → one stub, why), the uniform adapter interface, the registry pattern as extension point, the idempotency layer as the P2 dedup pattern reapplied at a new boundary, and the partial-success failure isolation as a generalization of P2 batchItemFailures applied to fan-out instead of fan-in.
 - ⬜ **P9.6** Deploy + smoke test — first-deploy step: confirm the AWS-sent subscription confirmation email at the recipient address (one-time per `(topic, address)` pair). Then P0 breach triggers real email delivery (verified in inbox) + structured `would_call` SMS log entry, both linked to the same case record in the cases table via the natural composite key; duplicate breach (same `sensorId+timestamp+readingType`) verified to UPDATE existing rows rather than CREATE new ones; simulated email failure (SNS publish error injected via mock) verified to NOT block the SMS path and to emit `AlertChannelFailures{channel=email}` metric.
@@ -1376,3 +1376,91 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     including the first-deploy SNS subscription confirmation
     click documented in pre-flight 6). AWS destroyed at end of day
     per cost-management practice.
+
+- **Day 7** (2026-05-14) — **Cost cleanup + P9.3 shipped (first
+  knowledge-anchor file of Phase 9).**
+  - **Idle-cost cleanup, two stacks down.** Morning kicked off
+    with an AWS billing review on the landing-page Cost & Usage
+    card — May spike from ~$40/month baseline to $77 mid-month
+    with forecast $152. Drill-down via Cost Explorer pinned the
+    overage on two stacks left deployed beyond their active
+    dev sessions: the **Hyperscale Ops POC** (NAT Gateway + ALB +
+    Fargate ≈ $65–70/month idle) and the **Development Roadmap
+    Tracker** (RDS Postgres + EC2 backend + ALB + NAT ≈
+    $75–95/month idle). Tore both down: `cdk destroy
+    HyperscaleOpsStack` for the first (plus manual cleanup of the
+    `RemovalPolicy.RETAIN` DynamoDB table + S3 bucket); Terragrunt
+    `run --all destroy` for the second (after commenting out the
+    `prevent_destroy = true` lifecycle on the CloudFront
+    distribution + manually emptying versioned S3 buckets).
+    Total monthly burn reduction: ~$140–160/month — should
+    flatten the forecast over the next 3–5 days as Cost Explorer
+    integrates the new daily rate. Grid Sensor's destroy-by-day
+    cost practice was validated as not the culprit; it's already
+    near-zero at the daily-destroy cadence.
+  - **Terragrunt CLI migration moment.** Hit Terragrunt's
+    v0.70+ CLI redesign mid-destroy — `terragrunt run-all destroy`
+    is deprecated in favor of `terragrunt run --all destroy`.
+    Worth knowing for the demo runbook (or any future Terragrunt
+    audience).
+  - **Gmail one-click unsubscribe re-bit.** Fresh `cdk deploy` of
+    Grid Sensor triggered the SNS subscription confirmation flow
+    again (post-destroy/redeploy cycle). The Day 6 lesson held:
+    confirm in the email body's *"Confirm subscription"* link,
+    don't tap Gmail's top-of-message *Unsubscribe* button.
+    Confirmed cleanly this time.
+  - **Auto-approve deploy reflex.** Discussion of `cdk deploy
+    --require-approval never` against the standing CLAUDE.md
+    hard-rule (*"no auto-approve until stable"*). Settled on
+    case-by-case use via `npm run deploy -- --require-approval
+    never` rather than baking it into the npm script — preserves
+    the guardrail in the reflexive workflow while removing
+    friction when the diff is known-safe. Reasonable
+    project-stability-trade-off conversation worth capturing as
+    interview-defensible.
+  - **Concept walkthrough — "what is the case layer providing
+    us."** Stepped back from the scaffold to articulate the four
+    things the cases-table layer earns its keep doing: (1)
+    dispatcher idempotency under Step Functions retries; (2)
+    cross-channel case linkage (one breach, one pk, N channel
+    rows); (3) operator queryability ("what's the status of
+    breach X?" = one Query); (4) audit-grade durable state.
+    Plus a separate walk-through of *"atomic + idempotent"* in
+    the conditional-write context — the distinction between the
+    server-side check-and-set (atomic) and the retry-safety
+    property (idempotent), and why naming both together makes the
+    dispatcher's `ConditionalCheckFailedException`-as-information-
+    signal contract crisp. Both walkthroughs are
+    interview-defense material; worth capturing as a public
+    follow-up post candidate.
+  - **P9.3 shipped — anchor work in mixed mode.** Implementation
+    started with Armando driving the anchor methods per
+    `shared/practice/collaboration-mode.md`. Wrote `buildCasePk`
+    (with fail-loud validation on incomplete keys), then
+    `findChannelCase` (GetCommand + `?? null` for the
+    missing-Item case), then `createChannelCase` (PutCommand +
+    `ConditionExpression: 'attribute_not_exists(pk)'`). Critical-
+    pushback review caught three real issues in the implementation:
+    (1) **TypeScript type-annotation error** on the stored Item
+    (`CaseChannelRow` doesn't have pk/sk fields — would have failed
+    `tsc`); (2) **redundant `key`-validation guards** at every
+    method when `buildCasePk` already validates (DRY violation);
+    (3) **`_thisPk` naming-convention misuse** (underscore prefix
+    conventionally signals "intentionally unused"). Each lesson
+    has interview-defense value — the type-annotation one
+    especially. End-of-day fatigue triggered the "take over"
+    handoff per the collaboration-mode "scaffold-and-wait vs.
+    just-write-it" allowed pattern. Claude implemented the
+    remaining four methods (`updateChannelCase` with dynamic
+    UpdateExpression + reserved-word aliasing; the three metadata
+    methods) plus the supporting `buildUpdateExpression` helper
+    factored at module scope, plus all 14 test bodies in
+    `case-repository.test.ts`.
+  - **State at end of Day 7.** Phase 9 progress: 3/6 sub-phases
+    shipped (P9.1, P9.2, P9.3). Overall core progress: 52/68
+    (76%). One knowledge-anchor file remains: P9.4 (LangGraph
+    tool-execution node + partial-success dispatcher). Then P9.5
+    (decision log + `case-management-patterns.md` learning note,
+    including the hypothetical-Slack-adapter file-diff sketch from
+    pre-flight 7) and P9.6 (deploy + smoke close-out). AWS
+    destroyed at end of day per cost-management practice.
