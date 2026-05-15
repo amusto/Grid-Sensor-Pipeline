@@ -27,9 +27,9 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-Core (P1-P12):     [████████████████░░░░] 79%   (54 / 68 sub-phases)
+Core (P1-P12):     [████████████████░░░░] 81%   (55 / 68 sub-phases)
 Stretch (P13-P14): [░░░░░░░░░░░░░░░░░░░░]  0%   ( 0 / 10 sub-phases)
-Combined:          [██████████████░░░░░░] 69%   (54 / 78 sub-phases)
+Combined:          [██████████████░░░░░░] 71%   (55 / 78 sub-phases)
 ```
 
 > **Core** is the MVP — what reviewers expect to see for the JD scope.
@@ -59,7 +59,7 @@ Combined:          [██████████████░░░░░░
 | 6 | DLQ + observability          | `██████████` | 100% | 6/6 | ✅ |
 | 7 | Query API                    | `██████████` | 100% | 6/6 | ✅ |
 | 8 | AI/ML Integration            | `██████████` | 100% | 6/6 | ✅ |
-| 9 | Agentic case routing         | `████████░░` |  83% | 5/6 | 🚧 |
+| 9 | Agentic case routing         | `██████████` | 100% | 6/6 | ✅ |
 | 10 | Datadog bridge              | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
 | 11 | Polish & teardown           | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
 | 12 | Live demo dashboard         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
