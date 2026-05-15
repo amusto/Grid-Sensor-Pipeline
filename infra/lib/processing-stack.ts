@@ -20,6 +20,7 @@ import * as eventsources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
+import { maybeAttachDatadog } from './datadog-instrumentation';
 
 export interface ProcessingStackProps extends cdk.StackProps {
   projectName: string;
@@ -105,6 +106,18 @@ export class ProcessingStack extends cdk.Stack {
     props.idempotencyTable.grantReadWriteData(processor);
     props.stream.grantRead(processor);
     dlq.grantSendMessages(processor);
+
+    /**
+     * P10 — optional Datadog Lambda Extension wiring. No-op unless
+     * the deploy explicitly opts in via CDK context:
+     *
+     *   cdk deploy -c enableDatadog=true \
+     *              -c ddApiKeySecretArn=arn:aws:secretsmanager:...
+     *
+     * See `lib/datadog-instrumentation.ts` for the rationale +
+     * env var contract.
+     */
+    maybeAttachDatadog(this, processor, 'grid-sensor-processor');
 
     /**
      * Kinesis Event Source Mapping.

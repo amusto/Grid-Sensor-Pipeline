@@ -24,6 +24,7 @@ import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { Construct } from 'constructs';
+import { maybeAttachDatadog } from './datadog-instrumentation';
 
 /**
  * Bedrock model identifier used by the LangGraph alert flow.
@@ -194,6 +195,18 @@ export class AlertWorkflowStack extends cdk.Stack {
     });
 
     alertTopic.grantPublish(alertHandler);
+
+    /**
+     * P10 — optional Datadog Lambda Extension wiring. No-op unless
+     * the deploy explicitly opts in via CDK context:
+     *
+     *   cdk deploy -c enableDatadog=true \
+     *              -c ddApiKeySecretArn=arn:aws:secretsmanager:...
+     *
+     * See `lib/datadog-instrumentation.ts` for the rationale +
+     * env var contract.
+     */
+    maybeAttachDatadog(this, alertHandler, 'grid-sensor-alert-handler');
 
     /**
      * P9.4 — grant the alert handler read+write to the cases table.

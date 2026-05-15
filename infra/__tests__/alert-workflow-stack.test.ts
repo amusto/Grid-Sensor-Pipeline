@@ -245,6 +245,78 @@ describe('AlertWorkflowStack template', () => {
     });
   });
 
+  describe('Datadog instrumentation (P10 — opt-in via context)', () => {
+    const FAKE_DD_SECRET_ARN =
+      'arn:aws:secretsmanager:us-east-1:123456789012:secret:gsp/dd-api-key-AbCdEf';
+
+    it('does NOT add Datadog wiring by default', () => {
+      const template = synth();
+      template.hasResourceProperties('AWS::Lambda::Function', {
+        Environment: {
+          Variables: Match.not(
+            Match.objectLike({ DD_API_KEY_SECRET_ARN: Match.anyValue() }),
+          ),
+        },
+      });
+    });
+
+    it('throws when enableDatadog=true is set without ddApiKeySecretArn', () => {
+      expect(() => synth({ enableDatadog: 'true' })).toThrow(
+        /ddApiKeySecretArn/,
+      );
+    });
+
+    it('attaches the Datadog Extension layer when opted in', () => {
+      const template = synth({
+        enableDatadog: 'true',
+        ddApiKeySecretArn: FAKE_DD_SECRET_ARN,
+      });
+      template.hasResourceProperties('AWS::Lambda::Function', {
+        Layers: Match.arrayWith([
+          Match.stringLikeRegexp(
+            'arn:aws:lambda:us-east-1:464622532012:layer:Datadog-Extension:',
+          ),
+        ]),
+      });
+    });
+
+    it('wires the canonical DD_* env vars when opted in', () => {
+      const template = synth({
+        enableDatadog: 'true',
+        ddApiKeySecretArn: FAKE_DD_SECRET_ARN,
+      });
+      template.hasResourceProperties('AWS::Lambda::Function', {
+        Environment: {
+          Variables: Match.objectLike({
+            DD_API_KEY_SECRET_ARN: FAKE_DD_SECRET_ARN,
+            DD_SITE: 'us5.datadoghq.com',
+            DD_ENV: 'poc',
+            DD_SERVICE: 'grid-sensor-alert-handler',
+            DD_SERVERLESS_LOGS_ENABLED: 'true',
+            DD_TRACE_ENABLED: 'false',
+          }),
+        },
+      });
+    });
+
+    it('grants Secrets Manager read on the API key secret', () => {
+      const template = synth({
+        enableDatadog: 'true',
+        ddApiKeySecretArn: FAKE_DD_SECRET_ARN,
+      });
+      template.hasResourceProperties('AWS::IAM::Policy', {
+        PolicyDocument: Match.objectLike({
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Action: Match.arrayWith(['secretsmanager:GetSecretValue']),
+              Resource: FAKE_DD_SECRET_ARN,
+            }),
+          ]),
+        }),
+      });
+    });
+  });
+
   describe('Stack outputs', () => {
     it('exports the state machine ARN for cross-stack reference', () => {
       const template = synth();

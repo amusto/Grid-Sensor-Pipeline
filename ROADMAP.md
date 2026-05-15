@@ -16,7 +16,7 @@ elapsed time depends on focus and velocity.
 ## Current state
 
 **Today:** Day 8 (2026-05-15)
-**Active phase:** **Phase 9 — Agentic case routing ✅ COMPLETE** (6/6 sub-phases shipped). Live retry-idempotency verification passed end-to-end this afternoon after a P5-legacy outer-SNS-publish bug was caught and fixed. **Next up: Phase 10 — Datadog bridge** (design-doc path likely, no Datadog account on hand for the deploy path).
+**Active phase:** **Phase 10 — Datadog bridge ✅ COMPLETE** (3/3 deploy-path sub-phases shipped). Day 8 closed strong: Phase 9 wrapped this afternoon after the outer-SNS-publish bug fix + live retry-idempotency verification, *then* Phase 10 deploy path landed end-to-end with the Datadog Lambda Extension forwarding EMF metrics + logs to a us5 Datadog org. Core progress 58/68 (85%). **Next up: Phase 11 — Polish & teardown** — README revision in voice, decision-log index, repo scrub, teardown verification.
 **Last shipped:** **P9.5 — Case-management-patterns learning note + decision-log reconcile + design-patterns-index update.** Three documentation deliverables closing Phase 9. New `docs/learning/case-management-patterns.md` formalizes three patterns using P9 as the canonical example: (1) conditional-write idempotency reapplied at a new boundary — same `attribute_not_exists(pk)` primitive deployed at P2 readings dedup AND P9 cases dedup; (2) partial-success failure isolation — fan-in (P2 batchItemFailures) and fan-out (P9 DispatchResult) as duals of the same pattern; (3) exception-as-information — `ConditionalCheckFailedException` catch-and-fall-back as control flow, not error handling. Plus the extension-point verification: a hypothetical-Slack-adapter file-diff sketch demonstrating adding a future channel is 1 new file + 3 narrow additions, with dispatcher / repository / table schema / IAM / alert handler / metrics all unchanged (per pre-flight 7's acceptance criterion). Decision log pre-flight 3 example updated to match shipped `DispatchResult` types (dropped `shouldRetry`, enumerated `SkipReason`, added retry-encounter worked example). Three new patterns added to the design-patterns index. **Note:** learning note is Claude-drafted under Day 8 timeline-priority mode; needs Armando voice pass before public publication.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
@@ -27,9 +27,9 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-Core (P1-P12):     [████████████████░░░░] 81%   (55 / 68 sub-phases)
+Core (P1-P12):     [█████████████████░░░] 85%   (58 / 68 sub-phases)
 Stretch (P13-P14): [░░░░░░░░░░░░░░░░░░░░]  0%   ( 0 / 10 sub-phases)
-Combined:          [██████████████░░░░░░] 71%   (55 / 78 sub-phases)
+Combined:          [██████████████░░░░░░] 74%   (58 / 78 sub-phases)
 ```
 
 > **Core** is the MVP — what reviewers expect to see for the JD scope.
@@ -60,7 +60,7 @@ Combined:          [██████████████░░░░░░
 | 7 | Query API                    | `██████████` | 100% | 6/6 | ✅ |
 | 8 | AI/ML Integration            | `██████████` | 100% | 6/6 | ✅ |
 | 9 | Agentic case routing         | `██████████` | 100% | 6/6 | ✅ |
-| 10 | Datadog bridge              | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
+| 10 | Datadog bridge              | `██████████` | 100% | 3/3 | ✅ |
 | 11 | Polish & teardown           | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
 | 12 | Live demo dashboard         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
 | 13 | Authentication & security hardening (strong stretch) | `░░░░░░░░░░` |   0% | 0/6 | 🎯 |
@@ -563,23 +563,34 @@ existing `NotifyOps` task — for agentic decisioning.
 
 ---
 
-## Phase 10 — Datadog bridge ⬜
+## Phase 10 — Datadog bridge ✅
 
 **Goal.** Production observability path. Either deploy or document the
-zero-app-code Datadog forwarding.
+zero-app-code Datadog forwarding. **Deploy path taken on 2026-05-15** —
+Datadog free trial covers the demo window; design-doc path moot.
 
-**Sub-phases & deliverables (deploy path):**
-- ⬜ **P10.1** Datadog Lambda Extension layer ARN added to processor Lambda
-- ⬜ **P10.2** `DD_API_KEY_SECRET_ARN`, `DD_SITE`, `DD_SERVERLESS_LOGS_ENABLED` env vars wired
-- ⬜ **P10.3** Verification screenshot — same EMF metrics visible in Datadog
+**Sub-phases & deliverables (deploy path — TAKEN):**
+- ✅ **P10.1** Datadog Lambda Extension layer (v75, x86_64) attached to both `grid-sensor-processor` and `grid-sensor-alert-handler` via a new `infra/lib/datadog-instrumentation.ts` helper. `maybeAttachDatadog(scope, fn, service)` is the one-line call sites use; reads `enableDatadog` from CDK context so the wiring is opt-in (default off keeps fresh-clone deploys + CI unchanged). Layer ARN constructed from `arn:aws:lambda:${region}:464622532012:layer:Datadog-Extension:${version}` with `ddExtensionVersion` context override for future bumps. APM tracing path intentionally deferred — would require the Node.js tracer layer + handler wrapping; out of scope for "EMF metrics visible in Datadog."
+- ✅ **P10.2** `DD_API_KEY_SECRET_ARN`, `DD_SITE=us5.datadoghq.com`, `DD_ENV=poc`, `DD_SERVICE` (per-function), `DD_SERVERLESS_LOGS_ENABLED=true`, `DD_TRACE_ENABLED=false` env vars wired. API key stored in AWS Secrets Manager (`grid-sensor-pipeline/datadog-api-key`) and read via the canonical Datadog-recommended pattern rather than a plaintext env var — Secrets Manager grants emit `secretsmanager:GetSecretValue` + `DescribeSecret` scoped to the exact secret ARN on each Lambda's execution role. CDK test coverage: six new assertions per stack (default-off, throws on missing secret ARN, layer attached, env vars present, IAM grant scoped, context overrides honored) in `infra/__tests__/processing-stack.test.ts` and `alert-workflow-stack.test.ts`.
+- ✅ **P10.3** Verification — Datadog Serverless view shows `grid-sensor-pipeline-processor` and `grid-sensor-pipeline-alert-handler` as tagged services with invocation count + duration + error rate populated. EMF custom metrics visible in Metrics Explorer under the `gridsensorpipeline.*` namespace (lowercased + dot-separated from the CloudWatch `GridSensorPipeline` namespace per Datadog's default mapping) alongside the same metric data in CloudWatch — both systems indexed the same EMF lines without any application-code change. The CloudFormation AWS integration also surfaced `grid-sensor-pipeline-query-api` as a third service via CloudWatch polling; query-api was intentionally not deep-instrumented (no Extension layer), so it shows surface telemetry only — that distinction is itself a clean talking point on the cost-vs-coverage tradeoff.
 
-**Sub-phases & deliverables (design-doc path, if no Datadog account available):**
-- ⬜ **P10.D1** `docs/decisions/phase-10-datadog-bridge.md` — full integration design
-- ⬜ **P10.D2** README section showing the exact CDK code to add
+**Sub-phases & deliverables (design-doc path):** moot — deploy path
+taken. Original P10.D1 / P10.D2 placeholders left in git history for
+reference but not counted against Phase 10's 3/3.
 
 **Acceptance criteria:**
-- Either: metric visible in both CloudWatch and Datadog
-- Or: design doc walks through the integration step-by-step with verification commands
+- ✅ Same EMF metrics visible in both CloudWatch and Datadog.
+
+**Datadog-flagged follow-ups (deferred to Phase 11 polish):**
+- "Deprecated runtime" warning on Node.js 20 — AWS Lambda enters
+  block-update around May/June 2026. Fix is a one-line CDK change
+  (`runtime: lambda.Runtime.NODEJS_22_X` + bundling target `node22`)
+  on each Lambda definition. Real upcoming break, not P10 scope.
+- "Duplicate logs" notice — both CloudWatch Logs and the Datadog
+  Extension are forwarding the same lines. Cost-tuning lever for
+  Phase 11; intentionally left on for now to preserve the free
+  `aws logs tail` debug path and defense-in-depth if the Datadog
+  trial expires before the demo.
 
 **Dependencies:** Phase 6.
 
@@ -1556,4 +1567,27 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     `AlertChannelFailures{channel=email}` ticks) is comprehensively
     unit-tested in `alert-graph.test.ts` and was not re-run live
     on this pass — the live retry test was the higher-value
-    evidence. AWS destroyed at end of day.
+    evidence.
+  - **Late Day 8 bonus — Phase 10 deploy path landed.** With
+    Phase 9 wrapped earlier in the afternoon and momentum still
+    available, opened a Datadog free trial (us5 region) and
+    walked the deploy path end-to-end rather than deferring to
+    the design-doc path. New `infra/lib/datadog-instrumentation.ts`
+    helper centralizes the Extension layer + `DD_*` env vars +
+    Secrets Manager grant behind a context-driven
+    `maybeAttachDatadog(scope, fn, service)` call. Wired into
+    the processor and alert-handler stacks; default off so
+    existing deploy paths are unchanged. CDK tests cover both
+    the default-off path and the opt-in path (six new assertions
+    per stack). Live deploy with `-c enableDatadog=true
+    -c ddApiKeySecretArn=...` plus a simulator pass produced
+    the verification artifact: Datadog Serverless tiles for
+    both Lambdas, `gridsensorpipeline.*` EMF metrics visible
+    in Metrics Explorer, same data simultaneously in CloudWatch
+    Metrics. Three follow-ups Datadog surfaced (Node 20 → 22
+    runtime bump on the AWS deprecation timeline, duplicate-logs
+    cost lever, APM tracing as a Phase 10 stretch) recorded
+    against Phase 11 polish queue. Day 8 net: 4 sub-phases
+    shipped in one day (P9.6 + P10.1 + P10.2 + P10.3), core
+    progress 54/68 → 58/68 (79% → 85%). AWS destroyed at end
+    of day.
