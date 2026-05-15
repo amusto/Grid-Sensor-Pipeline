@@ -15,9 +15,9 @@ elapsed time depends on focus and velocity.
 
 ## Current state
 
-**Today:** Day 7 (2026-05-14)
-**Active phase:** **Phase 9 — Agentic case routing 🚧** (3/6 sub-phases shipped). P9.1 + P9.2 + P9.3 complete; next is **P9.4** — the second knowledge-anchor file (LangGraph tool-execution node + partial-success dispatcher), where the cases repository from P9.3 finally gets exercised at runtime. Then P9.5 (decision log update + learning note `case-management-patterns.md` with the hypothetical-Slack-adapter file-diff sketch from pre-flight 7) and P9.6 (deploy + smoke close-out).
-**Last shipped:** **P9.3 — Idempotency-aware cases repository + cases DynamoDB table.** First knowledge-anchor file of Phase 9. The `attribute_not_exists(pk)` conditional-write idempotency pattern from P2's readings dedup, now applied at a new boundary: the agentic-tool dispatch layer. New `src/lib/cases/case-repository.ts` with three types (`CaseNaturalKey`, `CaseChannelRow`, `CaseMetadataRow`), the `buildCasePk` helper, and a `CaseRepository` class with find/create/update methods for both row types — six methods, atomic + idempotent on creates, dynamic `UpdateExpression` construction with reserved-word aliasing (`#status`) and immutable-field skipping. New cases table in `storage-stack.ts` (pk=composite natural key, sk=`'__metadata__'` or `caseSystem`, pay-per-request, PITR enabled, no TTL, `RemovalPolicy.DESTROY`). 14 unit tests covering all repository methods, `ConditionalCheckFailedException` propagation, reserved-word handling, and immutable-field defense-in-depth. **Mixed-mode anchor work:** Armando implemented `buildCasePk`, `findChannelCase`, `createChannelCase` from the scaffolded contract; review caught one TypeScript error (incorrect type annotation on the stored item), one redundant-validation pattern, and a naming-convention issue; Claude took over the remaining four methods + all test bodies after fatigue signal.
+**Today:** Day 8 (2026-05-15)
+**Active phase:** **Phase 9 — Agentic case routing 🚧** (5/6 sub-phases shipped). P9.1 through P9.5 complete; only **P9.6** (deploy + smoke close-out — retry-idempotency + failure-isolation live verification) remains. Phase 9 is one live test run away from complete; the architecture + documentation are landed.
+**Last shipped:** **P9.5 — Case-management-patterns learning note + decision-log reconcile + design-patterns-index update.** Three documentation deliverables closing Phase 9. New `docs/learning/case-management-patterns.md` formalizes three patterns using P9 as the canonical example: (1) conditional-write idempotency reapplied at a new boundary — same `attribute_not_exists(pk)` primitive deployed at P2 readings dedup AND P9 cases dedup; (2) partial-success failure isolation — fan-in (P2 batchItemFailures) and fan-out (P9 DispatchResult) as duals of the same pattern; (3) exception-as-information — `ConditionalCheckFailedException` catch-and-fall-back as control flow, not error handling. Plus the extension-point verification: a hypothetical-Slack-adapter file-diff sketch demonstrating adding a future channel is 1 new file + 3 narrow additions, with dispatcher / repository / table schema / IAM / alert handler / metrics all unchanged (per pre-flight 7's acceptance criterion). Decision log pre-flight 3 example updated to match shipped `DispatchResult` types (dropped `shouldRetry`, enumerated `SkipReason`, added retry-encounter worked example). Three new patterns added to the design-patterns index. **Note:** learning note is Claude-drafted under Day 8 timeline-priority mode; needs Armando voice pass before public publication.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
 ---
@@ -27,9 +27,9 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-Core (P1-P12):     [███████████████░░░░░] 76%   (52 / 68 sub-phases)
+Core (P1-P12):     [████████████████░░░░] 79%   (54 / 68 sub-phases)
 Stretch (P13-P14): [░░░░░░░░░░░░░░░░░░░░]  0%   ( 0 / 10 sub-phases)
-Combined:          [█████████████░░░░░░░] 67%   (52 / 78 sub-phases)
+Combined:          [██████████████░░░░░░] 69%   (54 / 78 sub-phases)
 ```
 
 > **Core** is the MVP — what reviewers expect to see for the JD scope.
@@ -59,7 +59,7 @@ Combined:          [█████████████░░░░░░░
 | 6 | DLQ + observability          | `██████████` | 100% | 6/6 | ✅ |
 | 7 | Query API                    | `██████████` | 100% | 6/6 | ✅ |
 | 8 | AI/ML Integration            | `██████████` | 100% | 6/6 | ✅ |
-| 9 | Agentic case routing         | `█████░░░░░` |  50% | 3/6 | 🚧 |
+| 9 | Agentic case routing         | `████████░░` |  83% | 5/6 | 🚧 |
 | 10 | Datadog bridge              | `░░░░░░░░░░` |   0% | 0/3 | ⬜ |
 | 11 | Polish & teardown           | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
 | 12 | Live demo dashboard         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
@@ -546,8 +546,8 @@ existing `NotifyOps` task — for agentic decisioning.
 - ✅ **P9.1** SMS stub channel adapter + P8 schema retrofit — `routing-strategy.ts` and `narrative-generator.ts` Zod schemas + `BASELINE_MATRIX` trimmed from `{slack, pagerduty, email, status_page}` to `{email, sms}`; `pageOnCall` collapsed into `channels.sms`. New `src/lib/cases/` tree with `types.ts`, `case-id.ts` (synthetic `MOCK-sms-{epochMs}-{hash6}` generator), `channels/sms-stub.ts` (Powertools `would_call` logging + `Promise<ChannelResult>` return), and `channels/index.ts` (CHANNEL_HANDLERS registry). Six test files updated or added — routing-strategy, narrative-generator, alert-handler, alert-graph, and a new sms-stub suite. All green. Two commits, retrofit + greenfield kept separate.
 - ✅ **P9.2** Email channel via SNS subscription — `EmailSubscription` wired on the P5 alert-workflow SNS topic (recipient via CDK context `alertEmail`, default `armando.musto+alertreported@gmail.com`); `AlertEmailRecipient` CFN output for visibility. `src/lib/cases/channels/email.ts` adapter publishes via the existing SNS client, returns SNS `MessageId` as `caseId`, catches publish errors and returns `status: 'failed'` (always-resolves contract matching the SMS stub). `CHANNEL_HANDLERS` registry tightened to full `Record<CaseSystem, ChannelHandler>`. New `scripts/add-demo-recipient.sh` adds ad-hoc viewers at runtime without redeploy. Six files touched (3 infra + helper, 3 application). Verified end-to-end live: `simulate.ts --count 5 --breach` produced 2 Step Functions executions and 2 alert emails landed in inbox.
 - ✅ **P9.3** Idempotency-aware case persistence — new `cases` DynamoDB table in `storage-stack.ts` (pk=`${sensorId}#${timestamp}#${readingType}`, sk=`'__metadata__'` or `caseSystem`, pay-per-request, PITR enabled, no TTL, `RemovalPolicy.DESTROY`). New `src/lib/cases/case-repository.ts` (anchor) with three row types, `buildCasePk` helper, and a `CaseRepository` class exposing find/create/update for both row types. Atomic + idempotent on creates via `ConditionExpression: 'attribute_not_exists(pk)'`; `ConditionalCheckFailedException` propagates to the caller as the dispatcher's "this is a retry" signal. Dynamic `UpdateExpression` construction with `#status` reserved-word aliasing and immutable-field skipping (`createdAt`, `channel`). 14 unit tests cover all paths including reserved-word handling + immutable-field defense-in-depth. Mixed-mode anchor work: Armando implemented `buildCasePk`, `findChannelCase`, `createChannelCase`; review caught a TypeScript type-annotation error + redundant validation + naming convention; Claude completed `updateChannelCase`, find/create/update for metadata, and all test bodies.
-- ⬜ **P9.4** LangGraph tool-execution node + failure isolation — new node 4 in the alert handler graph: iterates `CHANNEL_HANDLERS` over routing-plan selections, runs adapters in parallel via `Promise.allSettled`, aggregates results into `{ delivered: ChannelResult[], failed: ChannelResult[], skipped: CaseSystem[] }`. Step Functions continues even when one channel errors; failures emit `AlertChannelFailures` metric dimensioned by `channel`. **Knowledge-anchor file** per `shared/practice/collaboration-mode.md` — the `delivered`/`failed`/`skipped` shape is the file an interviewer would dig into hardest.
-- ⬜ **P9.5** Decision log revision + new learning note `case-management-patterns.md`; documents the scope simplification (five stubs → one stub, why), the uniform adapter interface, the registry pattern as extension point, the idempotency layer as the P2 dedup pattern reapplied at a new boundary, and the partial-success failure isolation as a generalization of P2 batchItemFailures applied to fan-out instead of fan-in.
+- ✅ **P9.4** LangGraph tool-execution node + partial-success dispatcher — new 4th node `executeToolsNode` in `src/lib/alert-graph.ts` runs after `generateNarratives`. Iterates `CHANNEL_HANDLERS` over routing-plan selections via `Promise.allSettled`; aggregates outcomes into `DispatchResult { delivered, failed, skipped }`. Per-channel input mapper (`buildChannelInput`) bridges breach context + narratives to each adapter's input shape. `ensureMetadata` + `dispatchChannel` helpers exercise the P9.3 conditional-write contract — catch `ConditionalCheckFailedException` from create methods as the "this is a retry" signal, fall back to update. Per-channel metrics: `CasesCreated`, `CasesRetried`, `AlertChannelFailures`, `DispatchLatencyMs`, all dimensioned by `Channel`. `SkipReason` enum: `retry_already_delivered | no_handler_registered | narrative_missing`. CDK wiring: `casesTable: dynamodb.ITable` prop on `AlertWorkflowStack`, `grantReadWriteData` to the alert handler role, `CASES_TABLE_NAME` env var. Alert handler payload extended with `dispatch: DispatchResult` for downstream visibility. Substantial test additions in `alert-graph.test.ts` (mocks for `CaseRepository` + `CHANNEL_HANDLERS`, five new describe blocks: first-encounter, retry idempotency, conditional-failure fallback, failure isolation, skip reasons, metadata ordering). Three test fixes for downstream impacts (the `MetricUnit`-as-type ambiguity in Powertools, the new `casesTable` prop required by `alert-workflow-stack.test.ts` context override + `observability-stack.test.ts` cross-stack helper). Live verified in AWS — deploy succeeded, simulator breach exercised the full chain, cases table writes confirmed. **Written end-to-end by Claude under Day 8 timeline-priority mode.**
+- ✅ **P9.5** Documentation closing Phase 9. New `docs/learning/case-management-patterns.md` formalizes three patterns: conditional-write idempotency at a new boundary (P2 + P9 same primitive at two layers), partial-success failure isolation (fan-in + fan-out duals), exception-as-information (catch-and-fall-back contract). Includes the extension-point verification — a hypothetical-Slack-adapter file-diff sketch proving "adding a channel is 1 new file + 3 narrow additions, nothing else changes" per pre-flight 7's acceptance criterion. Decision log pre-flight 3 example reconciled to match shipped `DispatchResult` types. Three new patterns added to `docs/learning/_design-patterns-index.md`. Learning note is Claude-drafted under timeline-priority mode; Armando voice pass pending before public publication.
 - ⬜ **P9.6** Deploy + smoke test — first-deploy step: confirm the AWS-sent subscription confirmation email at the recipient address (one-time per `(topic, address)` pair). Then P0 breach triggers real email delivery (verified in inbox) + structured `would_call` SMS log entry, both linked to the same case record in the cases table via the natural composite key; duplicate breach (same `sensorId+timestamp+readingType`) verified to UPDATE existing rows rather than CREATE new ones; simulated email failure (SNS publish error injected via mock) verified to NOT block the SMS path and to emit `AlertChannelFailures{channel=email}` metric.
 
 **Acceptance criteria:**
@@ -1464,3 +1464,82 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     including the hypothetical-Slack-adapter file-diff sketch from
     pre-flight 7) and P9.6 (deploy + smoke close-out). AWS
     destroyed at end of day per cost-management practice.
+
+- **Day 8** (2026-05-15) — **Collaboration-mode shift + P9.4 + P9.5
+  shipped. Phase 9 effectively one live test away from complete.**
+  - **Second collaboration-mode shift.** `shared/practice/collaboration-mode.md`
+    revised to document the move *from* knowledge-anchor pattern
+    *to* timeline-priority mode. Day-4 framing (Claude scaffolds +
+    reviews; user implements 2–3 anchor files per phase) had served
+    its purpose through P8.3–P9.3. With ~50% of Phase 9 remaining
+    + the project's other phases ahead, the candidate flipped the
+    priority back to completion. New default: Claude writes code
+    end-to-end; user reviews + operates + voices public-facing
+    artifacts. Implementation-by-user becomes an *offer* for
+    skill-gap moments, not a default. Three non-negotiable carries
+    documented: operational work, decision-grade authoring in
+    user's voice, public-facing artifacts. The honest trade-off
+    named: implementation knowledge erodes faster than conceptual
+    knowledge; mitigation is scheduled re-implementation sessions
+    after Phase 12 ships (the *"rewrite alert-graph.ts from
+    scratch from memory"* exercise from post-project candidates).
+  - **P9.4 shipped — LangGraph dispatcher + partial-success
+    failure isolation.** Written end-to-end by Claude under the
+    new mode. The second knowledge-anchor file of Phase 9 in
+    intent, the first written entirely by Claude. Exercises every
+    Phase 9 design decision at runtime: uniform adapter interface
+    (Email via SNS + SMS stub, both `Promise<ChannelResult>`,
+    dispatcher doesn't know which is real), conditional-write
+    idempotency (catch ConditionalCheckFailedException → fall back
+    to update), partial-success failure isolation
+    (`Promise.allSettled` → `{ delivered, failed, skipped }`),
+    registry as extension point (`CHANNEL_HANDLERS satisfies
+    Record<CaseSystem, ChannelHandler>` — TypeScript catches a
+    missing handler at compile time).
+  - **Test failures + fixes during P9.4 verification.** Three
+    issues surfaced during local test run, all fixed:
+    (1) `MetricUnit` is a value (const-enum-like), not a type,
+    in Powertools' exports — caused a TS2749 error in a parameter
+    annotation; inlined the helper to avoid the ambiguity.
+    (2) `alert-workflow-stack.test.ts`'s alertEmail-context-override
+    test instantiates `AlertWorkflowStack` inline rather than
+    through the synth helper, so it needed its own fake casesTable.
+    (3) `observability-stack.test.ts` instantiates a real
+    `AlertWorkflowStack` (because the dashboard depends on the
+    alert state machine metrics), so it needed `casesTable:
+    storage.casesTable` too. Also fixed a brittle
+    `Match.arrayWith` matcher on a multi-statement IAM policy by
+    walking the policies manually with `findResources` — cleaner
+    failure mode if anything regresses.
+  - **Live verified in AWS.** Deploy succeeded with the new
+    `CASES_TABLE_NAME` env var + cases-table grant. Simulator
+    `--count 5 --breach` exercised the full chain through the new
+    4th node; emails landed in inbox; cases table accumulated the
+    metadata + per-channel rows in the expected shape.
+  - **P9.5 shipped — case-management-patterns documentation.**
+    Three deliverables: new
+    `docs/learning/case-management-patterns.md` formalizing three
+    patterns (conditional-write idempotency reapplied at a new
+    boundary, partial-success failure isolation as fan-in / fan-out
+    duals, exception-as-information catch-and-fall-back contract);
+    decision log pre-flight 3 example reconciled to match shipped
+    `DispatchResult` types; three new patterns added to the
+    design-patterns index. Learning note includes the
+    hypothetical-Slack-adapter file-diff sketch verifying
+    pre-flight 7's *"adding a channel is a bounded mechanical
+    change"* acceptance criterion in writing. **The learning note
+    is Claude-drafted under the new mode; Armando voice pass
+    pending before public publication** — articulation-practice
+    artifact rather than a code artifact, so the voice
+    requirement is load-bearing for the post-Torus career goal.
+  - **State at end of Day 8.** Phase 9 progress: 5/6 sub-phases
+    shipped (P9.1–P9.5). Overall core progress: 54/68 (79%). Only
+    P9.6 remains — live retry-idempotency verification (invoke
+    alert-handler with an existing natural key, confirm no new
+    email + cases table rows UPDATE not CREATE + `CasesRetried`
+    metric ticks) and live failure-isolation verification
+    (inject an email-adapter failure, confirm SMS still fires +
+    `AlertChannelFailures{channel=email}` ticks). Both behaviors
+    are comprehensively unit-tested in `alert-graph.test.ts`; the
+    live verification is the additional evidence layer. ~30
+    minutes operational work. AWS destroyed at end of day.
