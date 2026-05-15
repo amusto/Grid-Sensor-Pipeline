@@ -1,8 +1,14 @@
 /**
- * Alert handler tests — verifies the P8.5 integration:
- *   1. Initial notification → LangGraph runs → enriched SNS payload.
- *   2. LangGraph error → BedrockFallback metric + deterministic payload.
- *   3. Escalation path → skips the graph; uses fallback shape; marks escalated.
+ * Alert handler tests — verifies the P9.4 integration:
+ *   1. Initial notification + LangGraph success → handler delegates
+ *      delivery to the dispatcher; the OUTER SNS publish does NOT fire.
+ *      This is the idempotency contract: the dispatcher's case-table
+ *      gate is the single source of truth for whether a channel has
+ *      already been notified, so retries can't double-send.
+ *   2. LangGraph error → BedrockFallback metric + deterministic payload
+ *      via the outer SNS publish (dispatcher never ran).
+ *   3. Escalation path → skips the graph; uses fallback shape; marks
+ *      escalated; outer SNS publish IS the delivery mechanism.
  *   4. Invalid event → AlertValidationFailed metric + throws.
  *
  * Strategy: mock `lib/alert-graph` so no real Bedrock calls; mock the
@@ -121,31 +127,21 @@ beforeEach(() => {
 });
 
 describe('handler — initial notification with LangGraph success', () => {
-  it('invokes the LangGraph and publishes the enriched payload to SNS', async () => {
+  it('invokes the LangGraph and delegates delivery to the dispatcher (no outer SNS publish)', async () => {
     mockRunAlertGraph.mockResolvedValueOnce(stubGraphResult);
 
     const result = await handler(buildBreachEvent(), ctx);
 
     expect(result).toEqual({ acknowledged: false, escalated: false });
     expect(mockRunAlertGraph).toHaveBeenCalledTimes(1);
-    expect(mockSnsSend).toHaveBeenCalledTimes(1);
 
-    const publishedInput = PublishCommandSpy.mock.calls[0][0];
-    const body = JSON.parse(publishedInput.Message);
-
-    // Enriched fields from the LangGraph result
-    expect(body.severity).toBe('P1');
-    expect(body.severityConfidence).toBe(0.91);
-    expect(body.severityReasoning).toMatch(/below 114V minimum/);
-    expect(body.narratives.sms).toMatch(/sensor-007/);
-    expect(body.routing.channels.sms).toBe(true);
-
-    // Original breach fields preserved
-    expect(body.sensorId).toBe('sensor-007');
-    expect(body.value).toBe(108);
-
-    // Subject reflects the LLM-classified tier
-    expect(publishedInput.Subject).toMatch(/^\[P1\]/);
+    // P9.4 — On the happy path, the dispatcher's email adapter (inside
+    // the graph, which is mocked here) is the SINGLE delivery path.
+    // The outer publish would double-send on first encounter and stray
+    // on retries (it would bypass the cases-table idempotency gate).
+    // See alert-graph.test.ts for the dispatcher-level coverage.
+    expect(mockSnsSend).not.toHaveBeenCalled();
+    expect(PublishCommandSpy).not.toHaveBeenCalled();
   });
 
   it('does NOT emit BedrockFallback on the success path', async () => {

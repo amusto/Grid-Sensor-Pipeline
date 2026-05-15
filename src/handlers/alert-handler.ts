@@ -242,15 +242,41 @@ export const handler = async (
       : `[${'severity' in payload ? payload.severity : 'P2'}]`;
     const subject = `${subjectPrefix} Grid sensor breach: ${validated.sensorId}`;
 
-    await sns.send(
-      new PublishCommand({
-        TopicArn: ALERT_TOPIC_ARN,
-        // Subject is restricted to ASCII printable + a few extras and
-        // <= 100 chars; sensorId is short enough that this is safe.
-        Subject: subject.slice(0, 100),
-        Message: JSON.stringify(payload, null, 2),
-      }),
-    );
+    // -------------------------------------------------------------------
+    // P9.4 — Outer SNS publish is now the FALLBACK / ESCALATION path only.
+    //
+    // On the happy path (LangGraph success), the dispatcher's email
+    // adapter already published to this same topic and recorded a case
+    // row keyed on `sensorId#timestamp#email`. Publishing again here
+    // would (a) double the email on first encounter, and (b) re-fire on
+    // every Step Functions retry — bypassing the cases-table idempotency
+    // gate the dispatcher just paid for.
+    //
+    // Two paths still need this publish:
+    //   1. usedFallback === true   — LangGraph (and therefore the
+    //      dispatcher) never completed; this publish is the only
+    //      delivery mechanism for the fail-soft contract.
+    //   2. isEscalated === true    — Escalation skips the graph
+    //      entirely (re-running would double Bedrock cost for
+    //      near-identical narratives); this publish is the only path.
+    //
+    // The escalation path is NOT yet idempotent end-to-end — a Step
+    // Functions retry of `EscalateToOnCall` will republish. Phase 12+
+    // can extend the dispatcher to cover the escalation invocation;
+    // for the demo, a duplicated `[P1 ESCALATED]` email is acceptable
+    // and rare (escalation only fires after the ack-wait window).
+    // -------------------------------------------------------------------
+    if (usedFallback || isEscalated) {
+      await sns.send(
+        new PublishCommand({
+          TopicArn: ALERT_TOPIC_ARN,
+          // Subject is restricted to ASCII printable + a few extras and
+          // <= 100 chars; sensorId is short enough that this is safe.
+          Subject: subject.slice(0, 100),
+          Message: JSON.stringify(payload, null, 2),
+        }),
+      );
+    }
 
     const recordMetric = metrics.singleMetric();
     recordMetric.addDimension('ReadingType', validated.readingType);

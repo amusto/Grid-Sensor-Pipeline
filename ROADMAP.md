@@ -16,7 +16,7 @@ elapsed time depends on focus and velocity.
 ## Current state
 
 **Today:** Day 8 (2026-05-15)
-**Active phase:** **Phase 9 — Agentic case routing 🚧** (5/6 sub-phases shipped). P9.1 through P9.5 complete; only **P9.6** (deploy + smoke close-out — retry-idempotency + failure-isolation live verification) remains. Phase 9 is one live test run away from complete; the architecture + documentation are landed.
+**Active phase:** **Phase 9 — Agentic case routing ✅ COMPLETE** (6/6 sub-phases shipped). Live retry-idempotency verification passed end-to-end this afternoon after a P5-legacy outer-SNS-publish bug was caught and fixed. **Next up: Phase 10 — Datadog bridge** (design-doc path likely, no Datadog account on hand for the deploy path).
 **Last shipped:** **P9.5 — Case-management-patterns learning note + decision-log reconcile + design-patterns-index update.** Three documentation deliverables closing Phase 9. New `docs/learning/case-management-patterns.md` formalizes three patterns using P9 as the canonical example: (1) conditional-write idempotency reapplied at a new boundary — same `attribute_not_exists(pk)` primitive deployed at P2 readings dedup AND P9 cases dedup; (2) partial-success failure isolation — fan-in (P2 batchItemFailures) and fan-out (P9 DispatchResult) as duals of the same pattern; (3) exception-as-information — `ConditionalCheckFailedException` catch-and-fall-back as control flow, not error handling. Plus the extension-point verification: a hypothetical-Slack-adapter file-diff sketch demonstrating adding a future channel is 1 new file + 3 narrow additions, with dispatcher / repository / table schema / IAM / alert handler / metrics all unchanged (per pre-flight 7's acceptance criterion). Decision log pre-flight 3 example updated to match shipped `DispatchResult` types (dropped `shouldRetry`, enumerated `SkipReason`, added retry-encounter worked example). Three new patterns added to the design-patterns index. **Note:** learning note is Claude-drafted under Day 8 timeline-priority mode; needs Armando voice pass before public publication.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
@@ -548,7 +548,7 @@ existing `NotifyOps` task — for agentic decisioning.
 - ✅ **P9.3** Idempotency-aware case persistence — new `cases` DynamoDB table in `storage-stack.ts` (pk=`${sensorId}#${timestamp}#${readingType}`, sk=`'__metadata__'` or `caseSystem`, pay-per-request, PITR enabled, no TTL, `RemovalPolicy.DESTROY`). New `src/lib/cases/case-repository.ts` (anchor) with three row types, `buildCasePk` helper, and a `CaseRepository` class exposing find/create/update for both row types. Atomic + idempotent on creates via `ConditionExpression: 'attribute_not_exists(pk)'`; `ConditionalCheckFailedException` propagates to the caller as the dispatcher's "this is a retry" signal. Dynamic `UpdateExpression` construction with `#status` reserved-word aliasing and immutable-field skipping (`createdAt`, `channel`). 14 unit tests cover all paths including reserved-word handling + immutable-field defense-in-depth. Mixed-mode anchor work: Armando implemented `buildCasePk`, `findChannelCase`, `createChannelCase`; review caught a TypeScript type-annotation error + redundant validation + naming convention; Claude completed `updateChannelCase`, find/create/update for metadata, and all test bodies.
 - ✅ **P9.4** LangGraph tool-execution node + partial-success dispatcher — new 4th node `executeToolsNode` in `src/lib/alert-graph.ts` runs after `generateNarratives`. Iterates `CHANNEL_HANDLERS` over routing-plan selections via `Promise.allSettled`; aggregates outcomes into `DispatchResult { delivered, failed, skipped }`. Per-channel input mapper (`buildChannelInput`) bridges breach context + narratives to each adapter's input shape. `ensureMetadata` + `dispatchChannel` helpers exercise the P9.3 conditional-write contract — catch `ConditionalCheckFailedException` from create methods as the "this is a retry" signal, fall back to update. Per-channel metrics: `CasesCreated`, `CasesRetried`, `AlertChannelFailures`, `DispatchLatencyMs`, all dimensioned by `Channel`. `SkipReason` enum: `retry_already_delivered | no_handler_registered | narrative_missing`. CDK wiring: `casesTable: dynamodb.ITable` prop on `AlertWorkflowStack`, `grantReadWriteData` to the alert handler role, `CASES_TABLE_NAME` env var. Alert handler payload extended with `dispatch: DispatchResult` for downstream visibility. Substantial test additions in `alert-graph.test.ts` (mocks for `CaseRepository` + `CHANNEL_HANDLERS`, five new describe blocks: first-encounter, retry idempotency, conditional-failure fallback, failure isolation, skip reasons, metadata ordering). Three test fixes for downstream impacts (the `MetricUnit`-as-type ambiguity in Powertools, the new `casesTable` prop required by `alert-workflow-stack.test.ts` context override + `observability-stack.test.ts` cross-stack helper). Live verified in AWS — deploy succeeded, simulator breach exercised the full chain, cases table writes confirmed. **Written end-to-end by Claude under Day 8 timeline-priority mode.**
 - ✅ **P9.5** Documentation closing Phase 9. New `docs/learning/case-management-patterns.md` formalizes three patterns: conditional-write idempotency at a new boundary (P2 + P9 same primitive at two layers), partial-success failure isolation (fan-in + fan-out duals), exception-as-information (catch-and-fall-back contract). Includes the extension-point verification — a hypothetical-Slack-adapter file-diff sketch proving "adding a channel is 1 new file + 3 narrow additions, nothing else changes" per pre-flight 7's acceptance criterion. Decision log pre-flight 3 example reconciled to match shipped `DispatchResult` types. Three new patterns added to `docs/learning/_design-patterns-index.md`. Learning note is Claude-drafted under timeline-priority mode; Armando voice pass pending before public publication.
-- ⬜ **P9.6** Deploy + smoke test — first-deploy step: confirm the AWS-sent subscription confirmation email at the recipient address (one-time per `(topic, address)` pair). Then P0 breach triggers real email delivery (verified in inbox) + structured `would_call` SMS log entry, both linked to the same case record in the cases table via the natural composite key; duplicate breach (same `sensorId+timestamp+readingType`) verified to UPDATE existing rows rather than CREATE new ones; simulated email failure (SNS publish error injected via mock) verified to NOT block the SMS path and to emit `AlertChannelFailures{channel=email}` metric.
+- ✅ **P9.6** Deploy + smoke test — live retry-idempotency verified end-to-end on 2026-05-15. Email subscription confirmation handled in P9.2 deploy; live execution this phase exposed a P5-legacy bug where the alert-handler's outer SNS publish was running unconditionally after the LangGraph and bypassing the dispatcher's case-table idempotency gate (first encounter = 2 emails, retry = 1 stray email). Fix: wrapped the outer publish in `if (usedFallback || isEscalated)` so the dispatcher is the sole delivery path on the happy path; outer publish remains the only mechanism for the fail-soft and escalation paths. New `scripts/verify-retry-idempotency.sh` invokes the alert-handler Lambda twice with identical input, snapshots the email-channel case row before and after, and asserts caseId stable + createdAt preserved + updatedAt advances + CasesRetried metric ticks. Post-fix run: same caseId across both invocations (`98c2cc86-…`), updatedAt advanced `17:13:38 → 17:14:12`, exactly 1 alert email landed in inbox. The script invokes the Lambda directly rather than driving Step Functions to keep verification fast (~10s/invocation vs. minutes through the ack-wait window) and to keep the inbox-count assertion clean (escalation would land a second `[P1 ESCALATED]` email otherwise — by design, but noise for this test).
 
 **Acceptance criteria:**
 - A P0 breach produces a real email at the configured address.
@@ -1532,14 +1532,28 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     pending before public publication** — articulation-practice
     artifact rather than a code artifact, so the voice
     requirement is load-bearing for the post-Torus career goal.
-  - **State at end of Day 8.** Phase 9 progress: 5/6 sub-phases
-    shipped (P9.1–P9.5). Overall core progress: 54/68 (79%). Only
-    P9.6 remains — live retry-idempotency verification (invoke
-    alert-handler with an existing natural key, confirm no new
-    email + cases table rows UPDATE not CREATE + `CasesRetried`
-    metric ticks) and live failure-isolation verification
-    (inject an email-adapter failure, confirm SMS still fires +
-    `AlertChannelFailures{channel=email}` ticks). Both behaviors
-    are comprehensively unit-tested in `alert-graph.test.ts`; the
-    live verification is the additional evidence layer. ~30
-    minutes operational work. AWS destroyed at end of day.
+  - **State at end of Day 8.** Phase 9 complete (6/6 sub-phases
+    shipped). Overall core progress: 55/68 (81%). P9.6 went live
+    this afternoon: the verification script invokes the alert-
+    handler Lambda twice with identical input and asserts case-
+    table idempotency invariants. The first run surfaced a
+    P5-legacy bug — the outer SNS publish in `alert-handler.ts`
+    was firing unconditionally after the LangGraph and bypassing
+    the dispatcher's case-table gate (first encounter = 2 emails,
+    retry = 1 stray email). Fix: wrapped the outer publish in
+    `if (usedFallback || isEscalated)` so the dispatcher is the
+    sole delivery path on the happy path; outer publish remains
+    the only mechanism for the fail-soft + escalation paths. The
+    re-verify after deploy was clean — same `caseId` across both
+    invocations, `updatedAt` advanced, exactly 1 alert email in
+    inbox. The bug itself is worth noting as a Phase 9 learning:
+    P9.4's dispatcher correctly enforced idempotency at the
+    cases-table layer, but a redundant delivery path above it in
+    the handler was bypassing the gate — *idempotency at one
+    layer doesn't compose unless every layer above it respects
+    the same key.* Live failure-isolation verification (inject
+    an email-adapter failure, confirm SMS still fires +
+    `AlertChannelFailures{channel=email}` ticks) is comprehensively
+    unit-tested in `alert-graph.test.ts` and was not re-run live
+    on this pass — the live retry test was the higher-value
+    evidence. AWS destroyed at end of day.

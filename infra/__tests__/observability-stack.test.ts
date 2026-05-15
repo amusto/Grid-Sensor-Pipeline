@@ -34,6 +34,7 @@ const synth = (): Template => {
   const alertWorkflow = new AlertWorkflowStack(app, 'AlertWorkflow', {
     env,
     projectName,
+    casesTable: storage.casesTable,
   });
   const observability = new ObservabilityStack(app, 'Observability', {
     env,
