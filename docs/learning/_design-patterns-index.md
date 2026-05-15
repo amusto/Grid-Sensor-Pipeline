@@ -62,6 +62,9 @@ specific code.
 | **Layered failure isolation** | Bisection + partial-failure response + retry budget + DLQ — each handles a distinct failure regime | `docs/decisions/phase-03-storage-processing.md` pre-flight 5; `docs/learning/aws-kinesis.md` ESM tuning section |
 | **State outlives delivery jitter** | Idempotency / dedup state's TTL must exceed the longest possible duplicate-delivery interval | `docs/decisions/phase-02-processor.md` pre-flight 1 |
 | **Belt-and-suspenders for invariants you can't afford to break** | Two independent mechanisms preserving the same invariant | `docs/decisions/phase-02-processor.md` (the conditional write on top of Powertools) |
+| **Conditional-write idempotency at a new boundary** | A single DynamoDB `attribute_not_exists(pk)` primitive deployed at two boundaries (Kinesis processor + agentic-tool dispatcher); the natural-key triple is the contract; the exception is the retry signal | `docs/learning/case-management-patterns.md` pattern 1; applied in `src/lib/repository.ts` + `src/lib/cases/case-repository.ts` |
+| **Partial-success failure isolation (fan-out)** | `Promise.allSettled` over N downstream targets returning a structured `{delivered, failed, skipped}` record with named buckets; one target failing never fails the operation | `docs/learning/case-management-patterns.md` pattern 2; applied in `src/lib/alert-graph.ts` `executeToolsNode` |
+| **Exception-as-information (catch-and-fall-back)** | A specific exception type (e.g., `ConditionalCheckFailedException`) carries semantic content; the caller catches it as control flow into a deliberate alternate path, never as a swallowed error | `docs/learning/case-management-patterns.md` pattern 3; applied in `src/lib/alert-graph.ts` `ensureMetadata` + `dispatchChannel` |
 
 ### Cost-aware engineering
 
@@ -102,6 +105,7 @@ specific code.
 | **Composition over replacement at the right layer** | When two technologies cover similar ground at different abstraction levels, compose rather than choose — each at the layer where it's strongest | `docs/decisions/phase-08-ai-ml-integration.md` pre-flight 1 (Step Functions outer + LangGraph inner); `docs/learning/langchain-langgraph.md` |
 | **Recurring-failure promotion** | When the same defect class hits N times, promote the documentation from "captured edge case" to "recurring class of failure" with a recurrence log + automated detection | `docs/decisions/phase-03-storage-processing.md` Deploy lesson #4 (Kinesis CFN orphan, 4× as of Day 3); `scripts/post-destroy-check.sh` |
 | **Bridge brokers at trust / operational boundaries** | External communication uses one protocol/broker (constrained by the partner / device ecosystem); internal uses another (chosen for your throughput and microservice topology); a bridge layer translates between them. Don't let the external protocol dictate your internal architecture. | `docs/learning/bridge-brokers-at-boundaries.md`; applied in `infra/lib/iot-stack.ts` (IoT Rules Engine as the MQTT→Kinesis bridge) |
+| **Uniform adapter interface as extension point** | Heterogeneous downstream targets behind a single `Promise<Result>` shape registered in a type-checked map; adding a future target is one new file + one map entry + one type-union literal — no changes to the dispatcher, the data layer, or the orchestration | `docs/learning/case-management-patterns.md` extension-point section; applied in `src/lib/cases/channels/index.ts` (`CHANNEL_HANDLERS satisfies Record<CaseSystem, ChannelHandler>`) |
 
 ---
 
@@ -117,7 +121,7 @@ specific code.
 | **P6** | _(to come — likely: chaos verification patterns, alarm threshold tuning, dimensioned vs aggregated metrics)_ |
 | **P7** | _(API boundary patterns — separate Zod schemas per surface; read-only IAM grants as defense in depth)_ |
 | **P8** | _(to come — hybrid Step Functions + LangGraph pattern; AI as best-effort enhancement with deterministic fallback; MCP as platform thinking)_ |
-| **P9** | _(to come — idempotency at the case-tracker layer; partial-success tool execution; routing matrix as data with LLM as override)_ |
+| **P9** | Conditional-write idempotency at a new boundary; Partial-success failure isolation (fan-out); Exception-as-information (catch-and-fall-back); Uniform adapter interface as extension point |
 
 ---
 

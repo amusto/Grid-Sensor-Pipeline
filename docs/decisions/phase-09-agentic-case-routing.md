@@ -204,19 +204,56 @@ fan-out (one alert dispatched to many channels).
 **Decision.** The LangGraph "execute tools" node calls each routing
 target (email, sms, plus any future channels) with individual
 try/catch boundaries — implemented via `Promise.allSettled` over
-the registry handlers. The node returns a structured result:
+the registry handlers. The node returns a structured `DispatchResult`:
+
+```ts
+type ChannelResult = {
+  channel: CaseSystem;            // 'email' | 'sms'
+  status: 'delivered' | 'failed' | 'skipped';
+  caseId: string;                 // SES MessageId | MOCK-sms-... | '' on failure
+  externalUrl?: string;
+  error?: string;                 // populated when status === 'failed'
+  latencyMs: number;
+};
+
+type SkipReason =
+  | 'retry_already_delivered'    // existing 'delivered' row → idempotent skip
+  | 'no_handler_registered'      // routing selected a channel CHANNEL_HANDLERS doesn't have
+  | 'narrative_missing';         // routing selected a channel narrative-generator omitted
+
+interface DispatchResult {
+  delivered: ChannelResult[];
+  failed: ChannelResult[];
+  skipped: Array<{ channel: CaseSystem; reason: SkipReason }>;
+}
+```
+
+Concretely, on a P0 breach with email + SMS selected, a typical
+first-encounter result:
 
 ```ts
 {
   delivered: [
-    { channel: 'email', caseId: 'ses-msg-id-abc', externalUrl: null, latencyMs: 145 },
+    { channel: 'email', status: 'delivered', caseId: 'ses-msg-id-abc', latencyMs: 145 },
+    { channel: 'sms',   status: 'delivered', caseId: 'MOCK-sms-1715627889123-a3f2c1',
+      externalUrl: 'https://example-sms.invalid/log/MOCK-sms-...', latencyMs: 12 },
   ],
-  failed: [
-    { channel: 'sms', error: 'rate_limited', shouldRetry: true, latencyMs: 23 },
-  ],
+  failed: [],
+  skipped: [],
+}
+```
+
+On a Step Functions retry of the same alert (the natural-key triple
+already has 'delivered' rows in the cases table), the dispatcher
+detects the existing rows and skips re-firing the adapters:
+
+```ts
+{
+  delivered: [],
+  failed: [],
   skipped: [
-    // populated when a channel was selected by routing but skipped at execute time
-    // (e.g., feature-flagged off, severity below per-channel threshold at runtime)
+    { channel: 'email', reason: 'retry_already_delivered' },
+    { channel: 'sms',   reason: 'retry_already_delivered' },
   ],
 }
 ```
