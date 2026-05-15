@@ -14,6 +14,7 @@
 
 import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -77,6 +78,14 @@ export interface AlertWorkflowStackProps extends cdk.StackProps {
    * `cdk deploy -c alertEmail=someone@example.com`.
    */
   alertEmail?: string;
+  /**
+   * Cases table from `StorageStack` (P9.3). Used by the alert
+   * handler's LangGraph dispatch node (P9.4) for idempotency-aware
+   * case persistence. Grants `readWriteData` to the alert handler's
+   * task role and surfaces the table name as the `CASES_TABLE_NAME`
+   * env var.
+   */
+  casesTable: dynamodb.ITable;
 }
 
 export class AlertWorkflowStack extends cdk.Stack {
@@ -169,6 +178,7 @@ export class AlertWorkflowStack extends cdk.Stack {
       logGroup: alertHandlerLogGroup,
       environment: {
         ALERT_TOPIC_ARN: alertTopic.topicArn,
+        CASES_TABLE_NAME: props.casesTable.tableName,
         BEDROCK_MODEL_ID,
         POWERTOOLS_SERVICE_NAME: 'grid-sensor-alert-handler',
         POWERTOOLS_METRICS_NAMESPACE: 'GridSensorPipeline',
@@ -184,6 +194,14 @@ export class AlertWorkflowStack extends cdk.Stack {
     });
 
     alertTopic.grantPublish(alertHandler);
+
+    /**
+     * P9.4 — grant the alert handler read+write to the cases table.
+     * The dispatcher node in `src/lib/alert-graph.ts` reads existing
+     * cases (for the idempotency check), creates new rows on first
+     * dispatch via conditional write, and updates rows on retry.
+     */
+    props.casesTable.grantReadWriteData(alertHandler);
 
     /**
      * P8.1 — Bedrock IAM grant for the cross-region inference profile.

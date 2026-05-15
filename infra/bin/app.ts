@@ -53,6 +53,7 @@ const alertWorkflow = new AlertWorkflowStack(app, 'GridSensorAlertWorkflowStack'
   env,
   projectName,
   description: 'Step Functions Standard Workflow + alert-handler Lambda',
+  casesTable: storage.casesTable,
 });
 
 new IotStack(app, 'GridSensorIotStack', {

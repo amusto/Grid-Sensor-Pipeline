@@ -89,6 +89,27 @@ const stubGraphResult = {
       sms: 'P1: sensor-007 voltage 108V (6V below 114V min). Investigate now.',
     },
   },
+  // P9.4 — the dispatcher's structured result. The alert-handler reads
+  // this and includes it in the SNS payload as `dispatch`.
+  dispatchResult: {
+    delivered: [
+      {
+        channel: 'email',
+        status: 'delivered',
+        caseId: 'ses-msg-id-001',
+        latencyMs: 145,
+      },
+      {
+        channel: 'sms',
+        status: 'delivered',
+        caseId: 'MOCK-sms-1715627889123-a3f2c1',
+        externalUrl: 'https://example-sms.invalid/log/MOCK-sms-1715627889123-a3f2c1',
+        latencyMs: 12,
+      },
+    ],
+    failed: [],
+    skipped: [],
+  },
 };
 
 beforeEach(() => {

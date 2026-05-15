@@ -156,6 +156,10 @@ const buildEnrichedPayload = (
     escalated: isEscalated,
     routing: graphResult.routing,
     narratives: graphResult.narratives.narratives,
+    // P9.4 — what the dispatcher actually delivered, failed, or skipped.
+    // Lets the SNS payload carry both the planned routing AND the
+    // realized outcome; auditors / downstream consumers can compare.
+    dispatch: graphResult.dispatchResult,
   };
 };
 

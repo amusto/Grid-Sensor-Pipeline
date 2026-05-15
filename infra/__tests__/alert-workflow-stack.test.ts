@@ -8,15 +8,32 @@
  *   - Alert handler is Node 20 with active tracing.
  */
 
-import { App } from 'aws-cdk-lib';
+import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { AlertWorkflowStack } from '../lib/alert-workflow-stack';
 
-const synth = (): Template => {
-  const app = new App();
+/**
+ * Build a fake cases table reference for tests. The real cases table
+ * comes from StorageStack at app composition time; here we synthesize
+ * a sibling stack with a minimal table just so the AlertWorkflowStack
+ * has a real `dynamodb.ITable` to grant against.
+ */
+const synth = (
+  contextOverrides: Record<string, string> = {},
+): Template => {
+  const app = new App({ context: contextOverrides });
+  const fakeStorage = new Stack(app, 'FakeStorage', {
+    env: { account: '123456789012', region: 'us-east-1' },
+  });
+  const casesTable = new dynamodb.Table(fakeStorage, 'FakeCasesTable', {
+    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+    sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+  });
   const stack = new AlertWorkflowStack(app, 'AlertWorkflow', {
     env: { account: '123456789012', region: 'us-east-1' },
     projectName: 'gsp-test',
+    casesTable,
   });
   return Template.fromStack(stack);
 };
@@ -64,6 +81,17 @@ describe('AlertWorkflowStack template', () => {
           Variables: Match.objectLike({
             ALERT_TOPIC_ARN: Match.anyValue(),
             POWERTOOLS_SERVICE_NAME: 'grid-sensor-alert-handler',
+          }),
+        },
+      });
+    });
+
+    it('exposes CASES_TABLE_NAME env var (P9.4 — dispatcher consumes this)', () => {
+      const template = synth();
+      template.hasResourceProperties('AWS::Lambda::Function', {
+        Environment: {
+          Variables: Match.objectLike({
+            CASES_TABLE_NAME: Match.anyValue(),
           }),
         },
       });
@@ -147,6 +175,36 @@ describe('AlertWorkflowStack template', () => {
     });
   });
 
+  describe('Cases table grant (P9.4 — dispatcher idempotency)', () => {
+    it('grants read+write DynamoDB actions on the alert handler role', () => {
+      const template = synth();
+      // The grant emits an inline policy on the handler's role with the
+      // CDK standard read+write action set for DynamoDB. The
+      // hasResourceProperties matcher struggles with the multi-statement
+      // policy shape (Bedrock + SNS + DynamoDB + XRay all stacked), so
+      // walk the policies manually and assert that at least one statement
+      // contains DynamoDB read+write actions.
+      const policies = template.findResources('AWS::IAM::Policy');
+
+      const writeActions = ['dynamodb:PutItem', 'dynamodb:UpdateItem'];
+      const readActions = ['dynamodb:GetItem', 'dynamodb:Query'];
+
+      const grantsAllActions = Object.values(policies).some((policy) => {
+        const statements: Array<{ Action?: string | string[] }> =
+          policy.Properties?.PolicyDocument?.Statement ?? [];
+        return statements.some((s) => {
+          const actions = Array.isArray(s.Action) ? s.Action : [s.Action];
+          return (
+            writeActions.every((a) => actions.includes(a)) &&
+            readActions.every((a) => actions.includes(a))
+          );
+        });
+      });
+
+      expect(grantsAllActions).toBe(true);
+    });
+  });
+
   describe('Email subscription (P9.2 — Option B)', () => {
     it('wires an EmailSubscription with the default recipient', () => {
       const template = synth();
@@ -160,9 +218,17 @@ describe('AlertWorkflowStack template', () => {
       const app = new App({
         context: { alertEmail: 'custom-recipient@example.com' },
       });
+      const fakeStorage = new Stack(app, 'FakeStorage', {
+        env: { account: '123456789012', region: 'us-east-1' },
+      });
+      const casesTable = new dynamodb.Table(fakeStorage, 'FakeCasesTable', {
+        partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+        sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+      });
       const stack = new AlertWorkflowStack(app, 'AlertWorkflow', {
         env: { account: '123456789012', region: 'us-east-1' },
         projectName: 'gsp-test',
+        casesTable,
       });
       const template = Template.fromStack(stack);
       template.hasResourceProperties('AWS::SNS::Subscription', {
