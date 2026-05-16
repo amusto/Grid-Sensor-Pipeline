@@ -1,6 +1,139 @@
-# Grid Sensor Pipeline
+# Cloud-Native Telemetry & Event Processing Architecture
 
-Serverless event-driven pipeline for IoT grid sensor telemetry — built on AWS with TypeScript throughout. Devices publish readings via AWS IoT Core; the pipeline processes, stores, and alerts in real time with full observability and zero data loss under failure.
+This project demonstrates a scalable cloud-native telemetry and event processing platform designed for Green Energy infrastructure and large-scale IT Data-Center environments.
+
+The platform ingests real-time telemetry data from distributed IoT sensors, evaluates operational thresholds and anomaly conditions, and orchestrates event-driven workflows for alerting, remediation, operational visibility, and downstream automation.
+
+The implementation was intentionally designed around an AWS-native architecture to align with modern enterprise cloud patterns commonly used across energy infrastructure, smart-grid modernization initiatives, and hyperscale operational environments.
+
+---
+
+# Core Platform Capabilities
+
+* Real-time IoT telemetry ingestion
+* Event-driven processing pipelines
+* Threshold breach detection
+* Distributed workflow orchestration
+* Serverless operational automation
+* Time-series telemetry processing
+* Scalable cloud-native architecture
+* AI-ready streaming foundations
+* Operational observability and monitoring
+* Infrastructure automation and extensibility
+
+---
+
+# Cloud-Native Architecture Alignment
+
+| Capability                  | AWS (Implemented Architecture) | Microsoft Azure                     | Google Cloud Platform (GCP)    | Kubernetes / Open Source           |
+| --------------------------- | ------------------------------ | ----------------------------------- | ------------------------------ | ---------------------------------- |
+| IoT Device Ingestion        | AWS IoT Core                   | Azure IoT Hub                       | MQTT Broker + Pub/Sub          | EMQX / Mosquitto                   |
+| MQTT Support                | Native MQTT Broker             | Native MQTT Broker                  | External MQTT Required         | Native MQTT Brokers                |
+| Real-Time Streaming         | Kinesis Data Streams           | Azure Event Hubs                    | Google Pub/Sub                 | Apache Kafka                       |
+| Event Processing            | Lambda + Step Functions        | Azure Functions + Durable Functions | Cloud Functions + Workflows    | Temporal + Kafka Streams           |
+| Workflow Orchestration      | AWS Step Functions             | Durable Functions                   | Google Workflows               | Temporal / Camunda                 |
+| Threshold Breach Processing | Lambda Rules Engine            | Azure Stream Analytics              | Dataflow                       | Apache Flink                       |
+| Time-Series Storage         | Timestream                     | Azure Data Explorer                 | BigQuery                       | InfluxDB / TimescaleDB             |
+| Long-Term Object Storage    | S3                             | Blob Storage                        | Cloud Storage                  | MinIO / Ceph                       |
+| Monitoring & Metrics        | CloudWatch                     | Azure Monitor                       | Cloud Operations Suite         | Prometheus + Grafana               |
+| Alerting                    | SNS / EventBridge              | Azure Alerts                        | Cloud Monitoring Alerts        | Alertmanager                       |
+| AI / ML Integration         | SageMaker                      | Azure ML                            | Vertex AI                      | Kubeflow / Ollama                  |
+| Infrastructure as Code      | CloudFormation / Terraform     | Bicep / Terraform                   | Deployment Manager / Terraform | Helm / ArgoCD / Terraform          |
+| Container Platform          | ECS / EKS                      | AKS                                 | GKE                            | Kubernetes                         |
+| Event Bus                   | EventBridge                    | Event Grid                          | Pub/Sub                        | Kafka / NATS                       |
+| Serverless Compute          | Lambda                         | Azure Functions                     | Cloud Functions                | Knative                            |
+| Edge Computing              | Greengrass                     | Azure IoT Edge                      | Anthos Edge                    | K3s / KubeEdge                     |
+| Vendor Lock-In Risk         | Medium-High                    | Medium-High                         | Medium                         | Low                                |
+| Hybrid / On-Prem Support    | Moderate                       | Strong                              | Moderate                       | Excellent                          |
+| Best Fit                    | Enterprise Cloud-Native IoT    | Industrial & Microsoft Ecosystems   | AI / Analytics Heavy Workloads | Portable Multi-Cloud Architectures |
+
+---
+
+# Architectural Direction
+
+The platform follows an event-driven and serverless-first design model intended to support:
+
+* High-volume telemetry ingestion
+* Distributed operational monitoring
+* Infrastructure automation
+* Real-time anomaly detection
+* Streaming data workflows
+* Intelligent operational decisioning
+* AI-enhanced infrastructure management
+
+The architecture establishes a foundation for future expansion into:
+
+* Predictive maintenance systems
+* AI-driven anomaly classification
+* Agentic operational workflows
+* RAG-powered operational assistants
+* Edge AI inferencing
+* Multi-cloud telemetry orchestration
+* Autonomous remediation pipelines
+
+---
+
+# Why AWS Was Selected
+
+The AWS-native implementation was selected due to strong alignment with enterprise operational requirements commonly found in:
+
+* Green Energy Platforms
+* Smart Grid Infrastructure
+* Utility Operations
+* Industrial Telemetry Systems
+* Distributed Sensor Networks
+* Large-Scale Data-Center Operations
+* Operational Technology (OT) modernization initiatives
+
+AWS services including IoT Core, Kinesis, Lambda, and Step Functions provide a highly scalable event-driven foundation while enabling rapid delivery of resilient, production-aligned operational workflows.
+
+---
+
+# Future Evolution Path
+
+The architecture is intentionally designed to evolve toward more advanced distributed systems and AI-enabled operational platforms.
+
+```text id="7abmfh"
+IoT Telemetry
+    ↓
+Streaming Event Bus
+    ↓
+Real-Time Processing
+    ↓
+AI / ML Inference
+    ↓
+Operational Decisioning
+    ↓
+Autonomous Workflow Automation
+```
+
+Planned evolutionary directions include:
+
+* Apache Kafka integration
+* Temporal.io workflow orchestration
+* Kubernetes-native deployment models
+* AI-assisted anomaly detection
+* RAG-powered operational copilots
+* Edge AI processing pipelines
+* Predictive infrastructure analytics
+* Distributed observability platforms
+
+---
+
+# Industry Alignment
+
+This architecture aligns closely with modern enterprise engineering initiatives focused on:
+
+* AI-ready infrastructure
+* Event-driven systems
+* Cloud-native operational platforms
+* Intelligent telemetry pipelines
+* Distributed workflow orchestration
+* Industrial IoT modernization
+* Smart energy systems
+* Observability engineering
+* Autonomous operations platforms
+
 
 ---
 
