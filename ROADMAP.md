@@ -15,8 +15,8 @@ elapsed time depends on focus and velocity.
 
 ## Current state
 
-**Today:** Day 8 (2026-05-15) — **POC close-out day.**
-**Active phase:** **POC complete in active scope.** Phases 9, 10, and 12 (docs-only) all landed today. Phase 12 was scoped down on 2026-05-15 evening from 6 build sub-phases to 1 documentation deliverable — `docs/decisions/phase-12-demo-dashboard.md` describes what would be built (CloudWatch CDK dashboard, public share toggle, Grafana three-option comparison, trigger button, portfolio integration) without spending the implementation surface or ongoing AWS cost. **Remaining: Phase 11 — Polish & teardown** (README revision in voice, decision-log index, repo scrub, teardown verification) — handled outside the rush, can land over the next few sessions without blocking anything else. **AWS resources scheduled for teardown tonight** per Phase 11.4 + the cost-cleanup checklist appended to the Phase 10 follow-up notes; Datadog API key + AWS integration disconnect first, then `cdk destroy --all`.
+**Today:** Day 9 (2026-05-16) — **POC complete.**
+**Active scope:** 63/63 core sub-phases shipped. Day 9 closed out Phase 11 in a tight 30-minute lean session: decision-log index landed (`docs/decisions/README.md` — chronological table linking every per-phase log with a one-sentence summary), `_private/` scrub passed clean (all 7 files local-only with `-rw-------`, zero tracked, only benign meta-references in history), teardown verified (`post-destroy-check.sh` ran clean as part of last night's `npm run destroy`; Cost Explorer 24-48h confirmation pending as a passive wait), and Armando's voice pass landed the load-bearing README revision — new "Cloud-Native Telemetry & Event Processing Architecture" framing for green-energy + hyperscale audiences plus an 18-row capability table comparing the implemented AWS architecture against Azure, GCP, and Kubernetes/open-source equivalents. POC is portfolio-ready; further README iteration is continuous improvement, not blocking. Stretch phases (P13 auth hardening, P14 architecture-as-code visualizations) remain available if a specific interview audience demands them.
 **Last shipped:** **P9.5 — Case-management-patterns learning note + decision-log reconcile + design-patterns-index update.** Three documentation deliverables closing Phase 9. New `docs/learning/case-management-patterns.md` formalizes three patterns using P9 as the canonical example: (1) conditional-write idempotency reapplied at a new boundary — same `attribute_not_exists(pk)` primitive deployed at P2 readings dedup AND P9 cases dedup; (2) partial-success failure isolation — fan-in (P2 batchItemFailures) and fan-out (P9 DispatchResult) as duals of the same pattern; (3) exception-as-information — `ConditionalCheckFailedException` catch-and-fall-back as control flow, not error handling. Plus the extension-point verification: a hypothetical-Slack-adapter file-diff sketch demonstrating adding a future channel is 1 new file + 3 narrow additions, with dispatcher / repository / table schema / IAM / alert handler / metrics all unchanged (per pre-flight 7's acceptance criterion). Decision log pre-flight 3 example updated to match shipped `DispatchResult` types (dropped `shouldRetry`, enumerated `SkipReason`, added retry-encounter worked example). Three new patterns added to the design-patterns index. **Note:** learning note is Claude-drafted under Day 8 timeline-priority mode; needs Armando voice pass before public publication.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
@@ -27,15 +27,16 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-Core (P1-P12):     [██████████████████░░] 90%   (59 / 65 sub-phases)
-Stretch (P13-P14): [░░░░░░░░░░░░░░░░░░░░]  0%   ( 0 / 10 sub-phases)
-Combined:          [███████████████░░░░░] 79%   (59 / 75 sub-phases)
+Core (P1-P12):     [████████████████████] 100%  (63 / 63 sub-phases)
+Stretch (P13-P14): [░░░░░░░░░░░░░░░░░░░░]   0%  ( 0 / 10 sub-phases)
+Combined:          [█████████████████░░░]  86%  (63 / 73 sub-phases)
 
 > Phase 12 was scoped down from 6 build sub-phases to 1 documentation
 > deliverable on 2026-05-15 — see the Phase 12 section for the
-> rationale. The denominator dropped from 68 to 65 to reflect the
-> active scope; the deprecated build plan is retained in the body
-> for historical reference + future revival.
+> rationale. The active-scope denominator dropped from 68 to 63
+> accordingly; the deprecated build plan is retained in the body
+> for historical reference + future revival. Phase 11 closed on
+> 2026-05-16 in a 30-minute lean session.
 ```
 
 > **Core** is the MVP — what reviewers expect to see for the JD scope.
@@ -67,7 +68,7 @@ Combined:          [███████████████░░░░░
 | 8 | AI/ML Integration            | `██████████` | 100% | 6/6 | ✅ |
 | 9 | Agentic case routing         | `██████████` | 100% | 6/6 | ✅ |
 | 10 | Datadog bridge              | `██████████` | 100% | 3/3 | ✅ |
-| 11 | Polish & teardown           | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
+| 11 | Polish & teardown           | `██████████` | 100% | 4/4 | ✅ |
 | 12 | Live demo dashboard (docs)  | `██████████` | 100% | 1/1 | ✅ |
 | 13 | Authentication & security hardening (strong stretch) | `░░░░░░░░░░` |   0% | 0/6 | 🎯 |
 | 14 | Architecture & live visualizations (stretch) | `░░░░░░░░░░` |   0% | 0/4 | 🎯 |
