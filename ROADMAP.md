@@ -15,8 +15,8 @@ elapsed time depends on focus and velocity.
 
 ## Current state
 
-**Today:** Day 8 (2026-05-15)
-**Active phase:** **Phase 10 — Datadog bridge ✅ COMPLETE** (3/3 deploy-path sub-phases shipped). Day 8 closed strong: Phase 9 wrapped this afternoon after the outer-SNS-publish bug fix + live retry-idempotency verification, *then* Phase 10 deploy path landed end-to-end with the Datadog Lambda Extension forwarding EMF metrics + logs to a us5 Datadog org. Core progress 58/68 (85%). **Next up: Phase 11 — Polish & teardown** — README revision in voice, decision-log index, repo scrub, teardown verification.
+**Today:** Day 8 (2026-05-15) — **POC close-out day.**
+**Active phase:** **POC complete in active scope.** Phases 9, 10, and 12 (docs-only) all landed today. Phase 12 was scoped down on 2026-05-15 evening from 6 build sub-phases to 1 documentation deliverable — `docs/decisions/phase-12-demo-dashboard.md` describes what would be built (CloudWatch CDK dashboard, public share toggle, Grafana three-option comparison, trigger button, portfolio integration) without spending the implementation surface or ongoing AWS cost. **Remaining: Phase 11 — Polish & teardown** (README revision in voice, decision-log index, repo scrub, teardown verification) — handled outside the rush, can land over the next few sessions without blocking anything else. **AWS resources scheduled for teardown tonight** per Phase 11.4 + the cost-cleanup checklist appended to the Phase 10 follow-up notes; Datadog API key + AWS integration disconnect first, then `cdk destroy --all`.
 **Last shipped:** **P9.5 — Case-management-patterns learning note + decision-log reconcile + design-patterns-index update.** Three documentation deliverables closing Phase 9. New `docs/learning/case-management-patterns.md` formalizes three patterns using P9 as the canonical example: (1) conditional-write idempotency reapplied at a new boundary — same `attribute_not_exists(pk)` primitive deployed at P2 readings dedup AND P9 cases dedup; (2) partial-success failure isolation — fan-in (P2 batchItemFailures) and fan-out (P9 DispatchResult) as duals of the same pattern; (3) exception-as-information — `ConditionalCheckFailedException` catch-and-fall-back as control flow, not error handling. Plus the extension-point verification: a hypothetical-Slack-adapter file-diff sketch demonstrating adding a future channel is 1 new file + 3 narrow additions, with dispatcher / repository / table schema / IAM / alert handler / metrics all unchanged (per pre-flight 7's acceptance criterion). Decision log pre-flight 3 example updated to match shipped `DispatchResult` types (dropped `shouldRetry`, enumerated `SkipReason`, added retry-encounter worked example). Three new patterns added to the design-patterns index. **Note:** learning note is Claude-drafted under Day 8 timeline-priority mode; needs Armando voice pass before public publication.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
@@ -27,9 +27,15 @@ elapsed time depends on focus and velocity.
 ### Overall
 
 ```
-Core (P1-P12):     [█████████████████░░░] 85%   (58 / 68 sub-phases)
+Core (P1-P12):     [██████████████████░░] 90%   (59 / 65 sub-phases)
 Stretch (P13-P14): [░░░░░░░░░░░░░░░░░░░░]  0%   ( 0 / 10 sub-phases)
-Combined:          [██████████████░░░░░░] 74%   (58 / 78 sub-phases)
+Combined:          [███████████████░░░░░] 79%   (59 / 75 sub-phases)
+
+> Phase 12 was scoped down from 6 build sub-phases to 1 documentation
+> deliverable on 2026-05-15 — see the Phase 12 section for the
+> rationale. The denominator dropped from 68 to 65 to reflect the
+> active scope; the deprecated build plan is retained in the body
+> for historical reference + future revival.
 ```
 
 > **Core** is the MVP — what reviewers expect to see for the JD scope.
@@ -62,7 +68,7 @@ Combined:          [██████████████░░░░░░
 | 9 | Agentic case routing         | `██████████` | 100% | 6/6 | ✅ |
 | 10 | Datadog bridge              | `██████████` | 100% | 3/3 | ✅ |
 | 11 | Polish & teardown           | `░░░░░░░░░░` |   0% | 0/4 | ⬜ |
-| 12 | Live demo dashboard         | `░░░░░░░░░░` |   0% | 0/6 | ⬜ |
+| 12 | Live demo dashboard (docs)  | `██████████` | 100% | 1/1 | ✅ |
 | 13 | Authentication & security hardening (strong stretch) | `░░░░░░░░░░` |   0% | 0/6 | 🎯 |
 | 14 | Architecture & live visualizations (stretch) | `░░░░░░░░░░` |   0% | 0/4 | 🎯 |
 
@@ -613,7 +619,57 @@ reference but not counted against Phase 10's 3/3.
 
 ---
 
-## Phase 12 — Live demo dashboard ⬜
+## Phase 12 — Live demo dashboard ✅ (documentation-only path)
+
+**Scope change on 2026-05-15.** With Phases 1–10 shipped and the
+POC architecturally complete, Phase 12 was scoped down to a single
+design-document deliverable — `docs/decisions/phase-12-demo-dashboard.md`
+— describing what would be built rather than building it. Rationale:
+the POC's purpose is interview-prep portfolio evidence, and the
+existing CloudWatch dashboards plus the live Datadog Serverless
+view from Phase 10 already provide the "see the metrics" artifact.
+The CloudWatch CDK dashboard, Grafana build, and trigger button add
+implementation surface (and ongoing AWS cost) without materially
+changing what a reviewer can assess. Documenting the design demonstrates
+the same product judgment ("here's the dashboard I'd build, here's
+why CloudWatch first, here's the Grafana migration path, here's the
+trigger-button UX") with zero runtime cost and zero teardown surface.
+
+**Deliverable:**
+- ✅ **P12.1** `docs/decisions/phase-12-demo-dashboard.md` — full
+  design covering CloudWatch dashboard widgets + CDK shape, public
+  sharing approach, Grafana three-option comparison with cost lens,
+  Grafana dashboard build sketch, simulator trigger button design,
+  portfolio integration plan, and the explicit "documented not built"
+  rationale.
+
+**Sub-phases deferred to stretch (originally P12.1–P12.6):** the full
+implementation path remains scoped in the decision doc itself for any
+future revival — `infra/lib/dashboard-stack.ts` CDK shape, Lambda
+Function URL trigger pattern, and Grafana deployment options are
+all written up so a follow-up "actually build it" session is
+mechanically straightforward.
+
+**Why CloudWatch before Grafana (preserved from the original plan):**
+- **Quick wins.** CloudWatch dashboard via CDK is ~50 lines of
+  construct code; live data appears immediately after deploy. Grafana
+  setup involves either signing up for Managed Grafana, provisioning
+  EC2, or running Docker locally — non-trivial.
+- **Cost-aware.** First three CloudWatch dashboards are free per
+  region. Grafana costs accrue regardless of whether anyone's watching.
+- **Sequential storytelling for the interview.** "I started with
+  CloudWatch's native dashboards because they were the lowest-effort
+  way to validate the metric design, then layered Grafana on top
+  because the team I came from at Aireon used Grafana and the
+  flexibility matters at scale."
+
+---
+
+## Phase 12 — Original (deprecated) build plan (kept for reference) ⬜
+
+**Status:** scoped out per the 2026-05-15 documentation-only change
+above. Retained below for historical context + as a starting point
+if Phase 12 is ever revived in build mode.
 
 **Goal.** A single shareable URL that gives a portfolio reviewer the
 "oh, neat" moment in under 30 seconds — live operational metrics
@@ -622,7 +678,7 @@ CloudWatch first for the quick win; Grafana to demonstrate the data-
 source flexibility used at Aireon.
 
 **Sub-phases & deliverables:**
-- ⬜ **P12.1** CloudWatch dashboard via CDK — `infra/lib/dashboard-stack.ts`:
+- ⬜ **P12.1 (build)** CloudWatch dashboard via CDK — `infra/lib/dashboard-stack.ts`:
   - Per-sensor latest reading widget (Logs Insights query into
     structured logs from the processor).
   - Pipeline throughput timeline (`EventsProcessed` count by minute).
@@ -1587,7 +1643,37 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     Metrics. Three follow-ups Datadog surfaced (Node 20 → 22
     runtime bump on the AWS deprecation timeline, duplicate-logs
     cost lever, APM tracing as a Phase 10 stretch) recorded
-    against Phase 11 polish queue. Day 8 net: 4 sub-phases
-    shipped in one day (P9.6 + P10.1 + P10.2 + P10.3), core
-    progress 54/68 → 58/68 (79% → 85%). AWS destroyed at end
-    of day.
+    against Phase 11 polish queue.
+  - **Day 8 close-out — Phase 12 scoped to documentation only.**
+    Evening realization: Phase 12 (live demo dashboard +
+    Grafana + trigger button) at 10–14 hours of build effort
+    adds incremental portfolio value but materially increases
+    AWS surface and ongoing teardown discipline. The Phase 10
+    Datadog Serverless view + the existing CloudWatch
+    `GridSensorPipeline` namespace already provide the
+    "see the metrics flowing" artifact a reviewer can assess.
+    Scoped Phase 12 down to a single `docs/decisions/phase-12-demo-dashboard.md`
+    design deliverable — full CloudWatch widget inventory,
+    Grafana three-option comparison (decided: local Docker +
+    embedded screenshots for cost permanence), simulator
+    trigger button architecture, portfolio integration plan,
+    and an explicit "documented not built" rationale. The
+    original six-build-sub-phase plan is preserved verbatim in
+    the ROADMAP under "Phase 12 — Original (deprecated) build
+    plan" for any future revival. Denominator reset 68 → 65
+    (active scope), numerator 58 → 59. Also wrote the missing
+    `docs/decisions/phase-10-datadog-bridge.md` capturing all
+    six Phase 10 design decisions (deploy-over-doc path,
+    Extension-over-Forwarder, us5 region choice, layer version
+    pinning, Secrets Manager over plaintext, APM deferral) +
+    architecture diagram + verification record + cost notes +
+    Phase 11 follow-up queue.
+  - **Day 8 net.** 5 sub-phases shipped in one day (P9.6 +
+    P10.1-3 + new P12 docs-only deliverable). Core progress
+    54/68 → 59/65 (79% → 91%). Two phases of active scope
+    remain: Phase 11 polish work (README + decision-log index
+    + scrub + teardown verification) for portfolio readiness.
+    AWS resources scheduled for teardown tonight per the
+    cost-cleanup checklist; Datadog API key + AWS integration
+    disconnect first, then `cdk destroy --all`, then verify
+    no orphans in Cost Explorer 24-48h later.
