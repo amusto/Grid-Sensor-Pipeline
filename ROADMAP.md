@@ -18,6 +18,7 @@ elapsed time depends on focus and velocity.
 **Today:** Day 9 (2026-05-16) — **POC complete.**
 **Active scope:** 63/63 core sub-phases shipped. Day 9 closed out Phase 11 in a tight 30-minute lean session: decision-log index landed (`docs/decisions/README.md` — chronological table linking every per-phase log with a one-sentence summary), `_private/` scrub passed clean (all 7 files local-only with `-rw-------`, zero tracked, only benign meta-references in history), teardown verified (`post-destroy-check.sh` ran clean as part of last night's `npm run destroy`; Cost Explorer 24-48h confirmation pending as a passive wait), and Armando's voice pass landed the load-bearing README revision — new "Cloud-Native Telemetry & Event Processing Architecture" framing for green-energy + hyperscale audiences plus an 18-row capability table comparing the implemented AWS architecture against Azure, GCP, and Kubernetes/open-source equivalents. POC is portfolio-ready; further README iteration is continuous improvement, not blocking. Stretch phases (P13 auth hardening, P14 architecture-as-code visualizations) remain available if a specific interview audience demands them.
 **Last shipped:** **P9.5 — Case-management-patterns learning note + decision-log reconcile + design-patterns-index update.** Three documentation deliverables closing Phase 9. New `docs/learning/case-management-patterns.md` formalizes three patterns using P9 as the canonical example: (1) conditional-write idempotency reapplied at a new boundary — same `attribute_not_exists(pk)` primitive deployed at P2 readings dedup AND P9 cases dedup; (2) partial-success failure isolation — fan-in (P2 batchItemFailures) and fan-out (P9 DispatchResult) as duals of the same pattern; (3) exception-as-information — `ConditionalCheckFailedException` catch-and-fall-back as control flow, not error handling. Plus the extension-point verification: a hypothetical-Slack-adapter file-diff sketch demonstrating adding a future channel is 1 new file + 3 narrow additions, with dispatcher / repository / table schema / IAM / alert handler / metrics all unchanged (per pre-flight 7's acceptance criterion). Decision log pre-flight 3 example updated to match shipped `DispatchResult` types (dropped `shouldRetry`, enumerated `SkipReason`, added retry-encounter worked example). Three new patterns added to the design-patterns index. **Note:** learning note is Claude-drafted under Day 8 timeline-priority mode; needs Armando voice pass before public publication.
+**Active phase:** **Phase 15 — Factory Floor Mapping & Asset Intelligence**, opened 2026-06-18 (post-POC capability extension). P15.1 (SDLC documentation alignment) in progress; P15.2 (domain model + seed data) and P15.3 (deterministic enrichment service) queued. This phase evolves the pipeline from telemetry-centric to asset-centric: sensor events get mapped to real/simulated factory-floor assets, indoor coordinates, zones, and production lines so alerts become location-aware operational incidents. Deterministic services own all factual mapping; the LLM/LangGraph layer only summarizes the structured context — it never invents physical locations.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
 ---
@@ -72,6 +73,7 @@ Combined:          [█████████████████░░░
 | 12 | Live demo dashboard (docs)  | `██████████` | 100% | 1/1 | ✅ |
 | 13 | Authentication & security hardening (strong stretch) | `░░░░░░░░░░` |   0% | 0/6 | 🎯 |
 | 14 | Architecture & live visualizations (stretch) | `░░░░░░░░░░` |   0% | 0/4 | 🎯 |
+| 15 | Factory Floor Mapping & Asset Intelligence | `░░░░░░░░░░` |   0% | 0/3 | 🚧 |
 
 ### Gantt — phases on a timeline
 
@@ -126,6 +128,7 @@ satisfies. This is the requirements-alignment view: progress isn't just
 | P12 | ⬜ | — | — | Demo surface only; reads existing metrics. Adds operational visibility for portfolio reviewers without changing pipeline contracts (formerly P10) |
 | P13 | 🎯 | — | — | Strong stretch — auth & security hardening (prioritized over P14 since security has more portfolio + production weight than visualizations) |
 | P14 | 🎯 | — | — | Stretch — architecture & live visualizations |
+| P15 | 🚧 | #1 (validate enriched events + registry/seed data at the I/O boundary via Zod), #2 (no I/O in `lib/factory-floor/` mapping logic), #3 (enrichment is a pure deterministic function — independently testable) | #1 (no `any`), #2 (no `console.log`), #3 (no bare `catch`) | Asset-centric extension. **Deterministic services own all factual mapping; the LLM only summarizes structured context — never invents physical locations.** |
 
 **Legend.** Invariants and rules numbered per `CLAUDE.md`. The matrix is
 additive — once a clause is satisfied by an earlier phase, later phases
@@ -159,6 +162,7 @@ inherit and must not violate it.
 | 12 | Live demo dashboard | ⬜ | CloudWatch (CDK, quick win) · Grafana (depth + Aireon experience callback) · simulator trigger button · portfolio embed | _pending_ |
 | 13 | Authentication & security hardening (strong stretch) | 🎯 | API Gateway throttling · API key + usage plan · Cognito user pool · IoT Fleet Provisioning · Secrets Manager · security model docs | _pending_ |
 | 14 | Architecture & live visualizations (stretch) | 🎯 | Static architecture diagram suite · X-Ray service map embed · animated data flow · live event stream viewer | _pending_ |
+| 15 | Factory Floor Mapping & Asset Intelligence | 🚧 | Sensor→asset→location→zone enrichment so alerts become location-aware incidents tied to real equipment, production lines, and response zones. Deterministic enrichment owns the mapping; LLM summarizes only | [`docs/decisions/phase-15-factory-floor-mapping.md`](docs/decisions/phase-15-factory-floor-mapping.md) |
 
 ---
 
@@ -839,6 +843,91 @@ without committing to P14.3 (animated GIF, ~1 day).
 real time?":** Yes — the X-Ray service map and CloudWatch dashboard
 *are* the real-time application diagrams. P14 makes that visibility
 discoverable to audiences who don't know to look in those places.
+
+---
+
+## Phase 15 — Factory Floor Mapping & Asset Intelligence 🚧
+
+**Status: in progress.** Post-POC capability extension opened 2026-06-18.
+The first feature added after the core pipeline was declared complete, so it
+is numbered after the P13/P14 stretch slots rather than inserted into the
+shipped sequence (which would renumber every existing cross-reference).
+
+**Goal.** Evolve the pipeline from *telemetry-centric* to *asset-centric*.
+Today a sensor event is an abstract reading — `sensorId`, `readingType`,
+`value`. Phase 15 maps that event to a real (or simulated) factory-floor
+asset and its physical context so an alert stops being "sensor temp-044 read
+185°C" and becomes "Conveyor 02 on Line 1, Cell A, Building A — overheating."
+
+**Conceptual evolution:**
+
+```
+Current:  sensor telemetry → anomaly/rule evaluation → alert
+Target:   sensor telemetry → sensor-to-asset lookup → asset location lookup
+          → zone/floor context enrichment → alert / NotifyOps response
+```
+
+**Inspiration.** Adapts the GPS/GIS location-and-routing model from the ERIP
+emergency-response POC to indoor manufacturing: GPS is replaced by an indoor
+factory-floor coordinate system, an asset registry, zone polygons, and
+(eventually) a route/path graph. This phase builds the deterministic
+foundation; routing and visualization are explicit non-goals (below).
+
+**Architectural principle (load-bearing).** Deterministic services own ALL
+factual mapping logic. The LLM / LangGraph layer (Phase 8/9) never invents
+physical locations — it only summarizes, reasons over, and generates
+recommendations from structured `locationContext` already produced by the
+deterministic enrichment service. This keeps the existing fail-soft AI
+contract intact: location facts come from data, not from a model.
+
+**Sub-phases & deliverables:**
+
+- 🚧 **P15.1 — SDLC documentation alignment.** Bring the repo's existing
+  documentation system up to date for Phase 15 *before* writing code:
+  ROADMAP Phase 15 section (this), decision log
+  [`docs/decisions/phase-15-factory-floor-mapping.md`](docs/decisions/phase-15-factory-floor-mapping.md)
+  + index row, two diagrams
+  ([`docs/diagrams/factory-floor-context.md`](docs/diagrams/factory-floor-context.md),
+  [`docs/diagrams/location-enrichment-flow.md`](docs/diagrams/location-enrichment-flow.md))
+  + diagrams-README + system-overview link, handoff spec
+  [`docs/handoff/phase-15-factory-floor-mapping.md`](docs/handoff/phase-15-factory-floor-mapping.md),
+  operations runbook [`docs/operations/asset-registry-runbook.md`](docs/operations/asset-registry-runbook.md)
+  + ops-README, and portfolio framing (card.jsx prose/chips +
+  `portfolio-entry.md`).
+- ⬜ **P15.2 — Domain model + seed data.** `src/lib/factory-floor/types.ts`
+  (`Asset`, `FloorMap`, `Zone`, `SensorMapping`, `EnrichedTelemetryEvent`,
+  `LocationContext`) + `schemas.ts` (Zod + inferred types), and demo seed
+  data under `data/factory-floor/` (`demo-floor-map.json`,
+  `demo-assets.json`, `demo-sensor-mappings.json`).
+- ⬜ **P15.3 — Deterministic location enrichment service.**
+  `src/lib/factory-floor/asset-registry.ts` (sensor→asset, asset→location,
+  asset→zone lookups) and `enrichment.ts`
+  (`enrichTelemetryEvent(event) → EnrichedTelemetryEvent`), with the
+  seven-case test suite. No LLM calls anywhere in the path.
+
+**Acceptance criteria (full phase):**
+- A telemetry event with a known `sensorId` resolves to its asset, the
+  asset's physical location, and its floor/zone context — deterministically.
+- A missing sensor mapping is handled safely (no throw; a structured,
+  enrichment-skipped result the caller can branch on).
+- The enrichment path makes zero LLM calls (asserted in tests).
+- The enriched `locationContext` is consumable as structured input by the
+  existing NotifyOps / LangGraph layer.
+
+**Non-goals (explicit — do NOT build in this phase):**
+- React / map UI for the factory floor.
+- Indoor routing / path-graph logic.
+- BLE / UWB worker-tracking integration.
+- CAD / BIM file import.
+- Any LLM-derived location inference.
+- A new documentation organization that conflicts with the existing repo
+  conventions.
+
+**Dependencies:** Phase 8/9 (the LangGraph/NotifyOps layer that consumes the
+enriched context). No new AWS infrastructure in P15.1–P15.3 — this is
+application-layer + documentation work.
+
+**Decision log:** [`docs/decisions/phase-15-factory-floor-mapping.md`](docs/decisions/phase-15-factory-floor-mapping.md)
 
 ---
 
@@ -1678,3 +1767,50 @@ Format: `**Day N** (YYYY-MM-DD) — completed P<N>.<M>: <brief summary>. Started
     cost-cleanup checklist; Datadog API key + AWS integration
     disconnect first, then `cdk destroy --all`, then verify
     no orphans in Cost Explorer 24-48h later.
+
+- **Day 10** (2026-06-18) — **Phase 15 opened: Factory Floor Mapping &
+  Asset Intelligence — P15.1 SDLC documentation.** First capability
+  extension after the POC was declared complete (Day 9, 2026-05-16).
+  Numbered Phase 15 (after the P13/P14 stretch slots) rather than
+  inserted into the shipped sequence, to avoid renumbering existing
+  cross-references. The feature evolves the pipeline from
+  telemetry-centric to asset-centric: sensor events get mapped to
+  factory-floor assets, indoor coordinates, zones, and production
+  lines so alerts become location-aware operational incidents.
+  Inspired by the ERIP emergency-response POC's GPS/GIS routing model,
+  adapted to indoor manufacturing (asset registry + floor maps + zone
+  polygons + deterministic enrichment in place of GPS).
+  - **Load-bearing architectural principle captured:** deterministic
+    services own all factual mapping; the LLM/LangGraph layer only
+    summarizes the structured `locationContext` it's handed — it never
+    invents physical locations. Keeps the Phase 8/9 fail-soft AI
+    contract intact (location facts come from data, not a model).
+  - **Implementation strategy: docs first, in three slices.** P15.1
+    (this session) is SDLC-documentation-only per the repo's standing
+    convention that documentation precedes code. P15.2 (domain model +
+    seed data) and P15.3 (deterministic enrichment service + tests)
+    are queued, not started.
+  - **P15.1 deliverables (documentation):** this ROADMAP section +
+    table rows + matrix row; decision log
+    `docs/decisions/phase-15-factory-floor-mapping.md` (+ index row in
+    `docs/decisions/README.md`); two diagrams
+    (`docs/diagrams/factory-floor-context.md`,
+    `docs/diagrams/location-enrichment-flow.md`) registered in the
+    diagrams README and linked from `system-overview.md`; handoff spec
+    `docs/handoff/phase-15-factory-floor-mapping.md`; operations runbook
+    `docs/operations/asset-registry-runbook.md` (+ ops README row);
+    portfolio framing in `docs/portfolio/card.jsx` and
+    `portfolio-entry.md`.
+  - **Naming-convention corrections applied during repo inspection:**
+    the requested `ADR-012-*.md` was mapped to the repo's actual
+    `phase-NN-<short>.md` decision-log convention; requested `.mmd`
+    diagram files were created as `.md` (Mermaid block + prose) to
+    match `docs/diagrams/`; the requested portfolio "case-study" file
+    was folded into the existing `card.jsx` + `portfolio-entry.md`
+    integration-kit convention rather than introducing a new file type.
+  - **Non-goals recorded** (decision log + ROADMAP): no map UI, no
+    indoor routing, no BLE/UWB worker tracking, no CAD/BIM import, no
+    LLM-derived locations. P15 builds the deterministic foundation only.
+  - **Doc-drafted under timeline-priority mode; Armando voice pass
+    pending** before public publication, consistent with the P9.5
+    learning-note convention.

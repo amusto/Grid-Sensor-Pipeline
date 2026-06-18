@@ -16,6 +16,12 @@
   Initial prose is included inline as a starting point. Overwrite both
   paragraphs in your own voice — the existing Roadmap Tracker card's
   cadence is the reference. Two paragraphs total.
+
+  Phase 15 update (2026-06-18): a "Factory Floor Mapping" framing sentence
+  was added to the second paragraph and two stack chips ("Asset
+  Intelligence", "Indoor Mapping") were added. These additions are
+  Claude-drafted and PENDING a voice pass before the card goes live — see
+  docs/portfolio/README.md step 4 (the knowledge-anchor step).
 */}
 
 <a
@@ -58,6 +64,12 @@
       alarm + per-output schema bounds). Production-grade discipline
       in a portfolio POC — decision logs, architectural invariants,
       recurring-failure documentation, end-to-end live verification.
+      Phase 15 extends it from telemetry-centric to asset-centric:
+      deterministic factory-floor mapping turns sensor alerts into
+      location-aware operational incidents tied to real equipment,
+      production zones, and response workflows — with the LLM strictly
+      summarizing structured location context it's handed, never
+      inventing locations.
     </p>
     <div style={{ marginBottom: '1.5rem' }}>
       <img
@@ -81,6 +93,8 @@
       <span className="proj-chip">Bedrock</span>
       <span className="proj-chip">LangGraph</span>
       <span className="proj-chip">MCP</span>
+      <span className="proj-chip">Asset Intelligence</span>
+      <span className="proj-chip">Indoor Mapping</span>
     </div>
   </div>
 </a>

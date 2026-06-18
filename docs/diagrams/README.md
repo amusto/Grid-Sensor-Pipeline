@@ -14,6 +14,8 @@
 | [`alert-workflow.md`](./alert-workflow.md) | The Step Functions state machine that drives alert notification and escalation. State-shape transformation through each step. |
 | [`langgraph-flow.md`](./langgraph-flow.md) | The three-node LangGraph that runs inside the alert handler — severity classification, routing decision, narrative generation. |
 | [`mcp-server.md`](./mcp-server.md) | The local stdio MCP server exposing read-only tools that any MCP client (Claude Desktop, Claude Code) can call to interrogate the live pipeline. |
+| [`factory-floor-context.md`](./factory-floor-context.md) | **Phase 15.** The asset/location domain model — how plant → building → floor → line → cell → zone → asset relate, and how `SensorMapping` resolves a `sensorId` to a physical location. |
+| [`location-enrichment-flow.md`](./location-enrichment-flow.md) | **Phase 15.** The deterministic enrichment pipeline — sensor → asset → location → zone context → `EnrichedTelemetryEvent`, including the missing-mapping fail-safe. No LLM in the path. |
 
 ## How to read these
 

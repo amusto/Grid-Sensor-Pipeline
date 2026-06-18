@@ -131,6 +131,16 @@ A short selection of architectural choices, each with a full ADR in `docs/adr/`:
 
 ---
 
+## Phase 15 — Factory Floor Mapping & Asset Intelligence
+
+> *Draft framing (2026-06-18) — pending a voice pass before publication.*
+
+Grid-Sensor-Pipeline began as an event-driven IoT telemetry pipeline. Phase 15 extends it with factory-floor mapping so sensor alerts become location-aware operational incidents tied to real equipment, production zones, and response workflows. This mirrors how the ERIP POC uses GIS/routing for emergency response, but adapts the concept to indoor manufacturing through asset registries, floor maps, zones, and deterministic location enrichment.
+
+The architectural through-line is the same discipline the rest of the project leads with: **deterministic services own all factual mapping; the LLM/LangGraph layer only summarizes and reasons over the structured location context it's handed — it never invents physical locations.** A sensor event resolves to its asset, the asset's indoor `(x, y)` coordinates, and its floor/zone context through pure registry lookups before the AI layer ever sees it, so location facts stay correct even when the model is unavailable.
+
+---
+
 ## What this project demonstrates
 
 - **Event-driven architecture on AWS serverless** — Lambda, Kinesis, Step Functions, IoT Core, all wired through CDK.

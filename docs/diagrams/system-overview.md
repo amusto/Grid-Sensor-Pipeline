@@ -22,6 +22,7 @@ flowchart TD
   Processor["Processor Lambda<br/>Validate + persist + meter"]
   DynamoDB["DynamoDB<br/>Readings + idempotency"]
   StepFn["Step Functions<br/>Standard Workflow"]
+  Enrich["Location Enrichment<br/>sensor→asset→zone · deterministic<br/>(Phase 15)"]
   Handler["Alert Handler Lambda<br/>LangGraph + Bedrock"]
   SNS["SNS Topic<br/>Alert notifications"]
   Query["Query API<br/>API Gateway · read-only"]
@@ -32,7 +33,8 @@ flowchart TD
   IoT --> StepFn
   Kinesis --> Processor
   Processor --> DynamoDB
-  StepFn --> Handler
+  StepFn --> Enrich
+  Enrich --> Handler
   Handler --> SNS
   DynamoDB --> Query
 
@@ -45,6 +47,7 @@ flowchart TD
   click DynamoDB "https://github.com/amusto/Grid-Sensor-Pipeline/blob/main/docs/diagrams/data-ingestion-path.md" "Drill into data ingestion path"
   click Query "https://github.com/amusto/Grid-Sensor-Pipeline/blob/main/docs/diagrams/data-ingestion-path.md" "Drill into data ingestion path"
   click StepFn "https://github.com/amusto/Grid-Sensor-Pipeline/blob/main/docs/diagrams/alert-workflow.md" "Drill into alert workflow"
+  click Enrich "https://github.com/amusto/Grid-Sensor-Pipeline/blob/main/docs/diagrams/location-enrichment-flow.md" "Drill into location enrichment"
   click Handler "https://github.com/amusto/Grid-Sensor-Pipeline/blob/main/docs/diagrams/langgraph-flow.md" "Drill into LangGraph internals"
   click MCP "https://github.com/amusto/Grid-Sensor-Pipeline/blob/main/docs/diagrams/mcp-server.md" "Drill into MCP server"
 
@@ -82,6 +85,8 @@ internal abstraction.**
 - [Alert workflow](./alert-workflow.md) — the Step Functions state machine
 - [LangGraph flow](./langgraph-flow.md) — the three-node graph inside the alert handler
 - [MCP server](./mcp-server.md) — local stdio MCP server with three read-only tools
+- [Factory floor context](./factory-floor-context.md) — Phase 15 asset/location domain model
+- [Location enrichment flow](./location-enrichment-flow.md) — Phase 15 deterministic sensor→asset→zone enrichment
 
 ## Related
 
