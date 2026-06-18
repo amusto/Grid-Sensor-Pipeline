@@ -15,10 +15,10 @@ elapsed time depends on focus and velocity.
 
 ## Current state
 
-**Today:** Day 9 (2026-05-16) — **POC complete.**
+**Today:** Day 10 (2026-06-18) — **Phase 15 opened; P15.1 (SDLC documentation) complete.** (POC core P1–P12 complete since Day 9, 2026-05-16.)
 **Active scope:** 63/63 core sub-phases shipped. Day 9 closed out Phase 11 in a tight 30-minute lean session: decision-log index landed (`docs/decisions/README.md` — chronological table linking every per-phase log with a one-sentence summary), `_private/` scrub passed clean (all 7 files local-only with `-rw-------`, zero tracked, only benign meta-references in history), teardown verified (`post-destroy-check.sh` ran clean as part of last night's `npm run destroy`; Cost Explorer 24-48h confirmation pending as a passive wait), and Armando's voice pass landed the load-bearing README revision — new "Cloud-Native Telemetry & Event Processing Architecture" framing for green-energy + hyperscale audiences plus an 18-row capability table comparing the implemented AWS architecture against Azure, GCP, and Kubernetes/open-source equivalents. POC is portfolio-ready; further README iteration is continuous improvement, not blocking. Stretch phases (P13 auth hardening, P14 architecture-as-code visualizations) remain available if a specific interview audience demands them.
-**Last shipped:** **P9.5 — Case-management-patterns learning note + decision-log reconcile + design-patterns-index update.** Three documentation deliverables closing Phase 9. New `docs/learning/case-management-patterns.md` formalizes three patterns using P9 as the canonical example: (1) conditional-write idempotency reapplied at a new boundary — same `attribute_not_exists(pk)` primitive deployed at P2 readings dedup AND P9 cases dedup; (2) partial-success failure isolation — fan-in (P2 batchItemFailures) and fan-out (P9 DispatchResult) as duals of the same pattern; (3) exception-as-information — `ConditionalCheckFailedException` catch-and-fall-back as control flow, not error handling. Plus the extension-point verification: a hypothetical-Slack-adapter file-diff sketch demonstrating adding a future channel is 1 new file + 3 narrow additions, with dispatcher / repository / table schema / IAM / alert handler / metrics all unchanged (per pre-flight 7's acceptance criterion). Decision log pre-flight 3 example updated to match shipped `DispatchResult` types (dropped `shouldRetry`, enumerated `SkipReason`, added retry-encounter worked example). Three new patterns added to the design-patterns index. **Note:** learning note is Claude-drafted under Day 8 timeline-priority mode; needs Armando voice pass before public publication.
-**Active phase:** **Phase 15 — Factory Floor Mapping & Asset Intelligence**, opened 2026-06-18 (post-POC capability extension). P15.1 (SDLC documentation alignment) in progress; P15.2 (domain model + seed data) and P15.3 (deterministic enrichment service) queued. This phase evolves the pipeline from telemetry-centric to asset-centric: sensor events get mapped to real/simulated factory-floor assets, indoor coordinates, zones, and production lines so alerts become location-aware operational incidents. Deterministic services own all factual mapping; the LLM/LangGraph layer only summarizes the structured context — it never invents physical locations.
+**Last shipped:** **P15.1 — SDLC documentation alignment for Phase 15 (Factory Floor Mapping & Asset Intelligence).** Documentation-only; no code. Created the decision log (`docs/decisions/phase-15-factory-floor-mapping.md`, six pre-flights led by the deterministic-mapping principle) + index row; two diagrams (`docs/diagrams/factory-floor-context.md`, `location-enrichment-flow.md`) registered in the diagrams README and linked from `system-overview.md`; the handoff spec (`docs/handoff/phase-15-factory-floor-mapping.md`) for the queued P15.2/P15.3; the operations runbook (`docs/operations/asset-registry-runbook.md`) + ops-README row; and the portfolio framing (`docs/portfolio/card.jsx` prose/chips + `portfolio-entry.md` section). ROADMAP updated with the Phase 15 section, table rows, matrix row, and Day 10 log entry. Three convention corrections applied: `ADR-012-*` → `phase-15-*.md`, `.mmd` → `.md` diagrams, portfolio "case-study" folded into the existing card/entry kit. **Note:** docs are Claude-drafted under timeline-priority mode; need Armando voice pass before public publication.
+**Active phase:** **Phase 15 — Factory Floor Mapping & Asset Intelligence**, opened 2026-06-18 (post-POC capability extension). P15.1 (SDLC documentation alignment) **complete** (2026-06-18); **P15.2 (domain model + seed data) is next**, P15.3 (deterministic enrichment service) after — both queued, not started. This phase evolves the pipeline from telemetry-centric to asset-centric: sensor events get mapped to real/simulated factory-floor assets, indoor coordinates, zones, and production lines so alerts become location-aware operational incidents. Deterministic services own all factual mapping; the LLM/LangGraph layer only summarizes the structured context — it never invents physical locations.
 **Cost reminder:** Run `npm run destroy` at the end of each dev session — Kinesis shard time accrues at ~$0.36/day. Bedrock is usage-based (no idle cost) but a runaway prompt loop can burn meaningful spend in an afternoon — `BedrockTokens-Runaway` alarm (>1M tokens/60min) caps that.
 
 ---
@@ -73,7 +73,7 @@ Combined:          [█████████████████░░░
 | 12 | Live demo dashboard (docs)  | `██████████` | 100% | 1/1 | ✅ |
 | 13 | Authentication & security hardening (strong stretch) | `░░░░░░░░░░` |   0% | 0/6 | 🎯 |
 | 14 | Architecture & live visualizations (stretch) | `░░░░░░░░░░` |   0% | 0/4 | 🎯 |
-| 15 | Factory Floor Mapping & Asset Intelligence | `░░░░░░░░░░` |   0% | 0/3 | 🚧 |
+| 15 | Factory Floor Mapping & Asset Intelligence | `███░░░░░░░` |  33% | 1/3 | 🚧 |
 
 ### Gantt — phases on a timeline
 
@@ -882,8 +882,9 @@ contract intact: location facts come from data, not from a model.
 
 **Sub-phases & deliverables:**
 
-- 🚧 **P15.1 — SDLC documentation alignment.** Bring the repo's existing
-  documentation system up to date for Phase 15 *before* writing code:
+- ✅ **P15.1 — SDLC documentation alignment.** *(Complete 2026-06-18.)*
+  Brought the repo's existing documentation system up to date for Phase 15
+  *before* writing code:
   ROADMAP Phase 15 section (this), decision log
   [`docs/decisions/phase-15-factory-floor-mapping.md`](docs/decisions/phase-15-factory-floor-mapping.md)
   + index row, two diagrams
